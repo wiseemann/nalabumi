@@ -16,7 +16,7 @@ defineProps({
             <div class="flex items-center gap-8">
                 <Link href="/" class="text-primary font-bold text-xl tracking-tight">Nalabumi</Link>
                 <div class="hidden md:flex items-center gap-6">
-                    <Link href="/" :class="[route().current('dashboard') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                    <Link href="/dashboard" :class="[route().current('dashboard') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
                         <span class="material-symbols-outlined text-[18px]">dashboard</span>
                         Dashboard
                     </Link>
