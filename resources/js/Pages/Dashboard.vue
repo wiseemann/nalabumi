@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import L from 'leaflet';
@@ -32,6 +32,32 @@ const selectedCategory = ref(null);
 const selectedDateRange = ref('30');
 const activeRegencyLayer = ref(null);
 const hideDetailTimeout = ref(null);
+const activeTooltipLayer = ref(null);
+// Track raw mouse button state — much more reliable than Leaflet's dragstart
+// because browsers fire SVG mouseover BEFORE Leaflet knows a drag has started.
+const isMouseButtonDown = ref(false);
+
+function onMouseDown() {
+    isMouseButtonDown.value = true;
+    // Remove any currently open tooltip from the map
+    if (activeTooltipLayer.value) {
+        activeTooltipLayer.value._tooltip && activeTooltipLayer.value._tooltip.remove();
+        activeTooltipLayer.value = null;
+    }
+    // Belt-and-suspenders: remove all standalone tooltip layers from the map
+    if (map.value) {
+        map.value.eachLayer(l => {
+            if (l instanceof L.Tooltip) l.remove();
+        });
+    }
+}
+function onMouseUp() {
+    // Small delay so any pending mouseover events from the final drag position
+    // are consumed while the flag is still true
+    setTimeout(() => {
+        isMouseButtonDown.value = false;
+    }, 100);
+}
 
 const dateRanges = [
     { label: 'Hari ini', value: '1' },
@@ -133,8 +159,15 @@ function regencySelectedStyle(sc) {
 }
 
 onMounted(() => {
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
     initMap();
     loadAllLayers();
+});
+
+onUnmounted(() => {
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mouseup', onMouseUp);
 });
 
 function initMap() {
@@ -186,7 +219,7 @@ function buildRegencyLayer(data) {
             const statusData = getRegencyStatus(regencyName);
             const sc = getStatusConfig(statusData.level);
 
-            layer.bindTooltip(
+            const tooltipContent =
                 `<div style="font-weight:600;font-size:14px;margin-bottom:2px;">${regencyName}</div>` +
                 `<div style="color:#43493d;font-size:12px;">Prov. ${provinceName}</div>` +
                 `<div style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;background:${sc.bg};color:${sc.textColor};">` +
@@ -194,24 +227,50 @@ function buildRegencyLayer(data) {
                 `</div>` +
                 `<div style="margin-top:6px;font-size:10px;color:#74796b;display:flex;align-items:center;gap:4px;">` +
                 `<span style="font-size:12px;">touch_app</span> Klik untuk lihat detail` +
-                `</div>`,
-                {
-                    sticky: true,
-                    direction: 'top',
-                    offset: [0, -8],
-                    className: 'nalabumi-tooltip',
-                }
-            );
+                `</div>`;
+
+            // Use a fully manual tooltip — NOT bindTooltip — so Leaflet's internal
+            // mouseover listener never fires. We control 100% when it shows/hides.
+            const tooltip = L.tooltip({
+                direction: 'top',
+                offset: [0, -8],
+                className: 'nalabumi-tooltip',
+            }).setContent(tooltipContent);
 
             layer.on('mouseover', function (e) {
+                // Block tooltips while the mouse button is held (dragging/panning)
+                if (isMouseButtonDown.value) return;
+
                 clearTimeout(hideDetailTimeout.value);
+
+                // Remove tooltip from any other layer
+                if (activeTooltipLayer.value && activeTooltipLayer.value !== layer) {
+                    activeTooltipLayer.value._tooltip && activeTooltipLayer.value._tooltip.remove();
+                }
+                activeTooltipLayer.value = layer;
+                layer._tooltip = tooltip;
+                tooltip.setLatLng(e.latlng).addTo(map.value);
+
                 if (activeRegencyLayer.value !== layer) {
                     e.target.setStyle(regencyHighlightStyle(sc));
                 }
                 showRegencyDetail(regencyName, provinceName, statusData);
             });
 
+            layer.on('mousemove', function (e) {
+                // Remove tooltip immediately if mouse button is pressed while hovering
+                if (isMouseButtonDown.value) {
+                    tooltip.remove();
+                    return;
+                }
+                tooltip.setLatLng(e.latlng);
+            });
+
             layer.on('mouseout', function (e) {
+                tooltip.remove();
+                if (activeTooltipLayer.value === layer) {
+                    activeTooltipLayer.value = null;
+                }
                 if (activeRegencyLayer.value !== layer) {
                     if (regencyLayer.value) regencyLayer.value.resetStyle(e.target);
                 }
@@ -226,6 +285,7 @@ function buildRegencyLayer(data) {
                 }
                 activeRegencyLayer.value = layer;
                 layer.setStyle(regencySelectedStyle(sc));
+                tooltip.remove();
                 clearTimeout(hideDetailTimeout.value);
                 showRegencyDetail(regencyName, provinceName, statusData);
                 // Navigate to detail page after a short visual delay
