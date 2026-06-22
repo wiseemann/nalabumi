@@ -1,13 +1,13 @@
 {
-  "_AppLayout-DXc7B7ip.js": {
-    "file": "assets/AppLayout-DXc7B7ip.js",
+  "_AppLayout-MvjzOUne.js": {
+    "file": "assets/AppLayout-MvjzOUne.js",
     "name": "AppLayout",
     "imports": [
       "resources/js/app.js"
     ]
   },
-  "_vue3-apexcharts-D_2cbfR0.js": {
-    "file": "assets/vue3-apexcharts-D_2cbfR0.js",
+  "_vue3-apexcharts-DyTrQHbY.js": {
+    "file": "assets/vue3-apexcharts-DyTrQHbY.js",
     "name": "vue3-apexcharts",
     "imports": [
       "resources/js/app.js"
@@ -35,7 +35,7 @@
     "isDynamicEntry": true
   },
   "resources/css/app.css": {
-    "file": "assets/app-DP-AiaQ1.css",
+    "file": "assets/app-vwHFntCo.css",
     "name": "app",
     "names": [
       "app.css"
@@ -44,55 +44,55 @@
     "isEntry": true
   },
   "resources/js/Pages/Analytics.vue": {
-    "file": "assets/Analytics-COfVZM7g.js",
+    "file": "assets/Analytics-CdP_iUnv.js",
     "name": "Analytics",
     "src": "resources/js/Pages/Analytics.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_vue3-apexcharts-D_2cbfR0.js",
-      "_AppLayout-DXc7B7ip.js"
+      "_vue3-apexcharts-DyTrQHbY.js",
+      "_AppLayout-MvjzOUne.js"
     ]
   },
   "resources/js/Pages/Archive.vue": {
-    "file": "assets/Archive-Dq27okEh.js",
+    "file": "assets/Archive-jMy-1N23.js",
     "name": "Archive",
     "src": "resources/js/Pages/Archive.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_AppLayout-DXc7B7ip.js"
+      "_AppLayout-MvjzOUne.js"
     ]
   },
   "resources/js/Pages/Chat.vue": {
-    "file": "assets/Chat-mBCUoLPp.js",
+    "file": "assets/Chat-EzGm-eYn.js",
     "name": "Chat",
     "src": "resources/js/Pages/Chat.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_AppLayout-DXc7B7ip.js"
+      "_AppLayout-MvjzOUne.js"
     ]
   },
   "resources/js/Pages/Dashboard.vue": {
-    "file": "assets/Dashboard-Dv4QLDwO.js",
+    "file": "assets/Dashboard-DmAjWbiN.js",
     "name": "Dashboard",
     "src": "resources/js/Pages/Dashboard.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_vue3-apexcharts-D_2cbfR0.js",
-      "_AppLayout-DXc7B7ip.js"
+      "_vue3-apexcharts-DyTrQHbY.js",
+      "_AppLayout-MvjzOUne.js"
     ]
   },
   "resources/js/Pages/Map.vue": {
-    "file": "assets/Map-Dkw_keKp.js",
+    "file": "assets/Map-BGk3LP5K.js",
     "name": "Map",
     "src": "resources/js/Pages/Map.vue",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.js",
-      "_AppLayout-DXc7B7ip.js"
+      "_AppLayout-MvjzOUne.js"
     ],
     "css": [
       "assets/Map-ObajpCcu.css"
@@ -104,7 +104,7 @@
     ]
   },
   "resources/js/app.js": {
-    "file": "assets/app-C3eY7Svw.js",
+    "file": "assets/app-Bxn_cc6u.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,

@@ -2,10 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Article;
 use App\Models\Category;
-use App\Models\EnvironmentalCase;
-use App\Models\Location;
 use App\Models\UrgencyScore;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -14,40 +11,22 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $totalArticles = Article::count();
-        $totalCases = EnvironmentalCase::count();
-        $totalLocations = Location::has('cases')->count();
+        $categories = Category::all();
 
-        $casesByCategory = Category::withCount(['cases' => function ($query) {
-            $query->whereHas('article', function ($q) {
-                $q->where('is_analyzed', true);
-            });
-        }])
-            ->orderByDesc('cases_count')
-            ->get();
-
-        $topRegions = Location::withCount('cases')
-            ->with(['latestUrgencyScore'])
-            ->orderByDesc('cases_count')
-            ->limit(10)
-            ->get();
-
-        $dailyTrend = Article::selectRaw('DATE(created_at) as date, COUNT(*) as count')
-            ->where('is_analyzed', true)
-            ->groupBy('date')
-            ->orderBy('date')
-            ->limit(30)
+        $urgencyScores = UrgencyScore::select('urgency_scores.*')
+            ->join(
+                DB::raw('(SELECT location_id, MAX(date) as max_date FROM urgency_scores GROUP BY location_id) as latest'),
+                function ($join) {
+                    $join->on('urgency_scores.location_id', '=', 'latest.location_id')
+                        ->on('urgency_scores.date', '=', 'latest.max_date');
+                }
+            )
+            ->with('location')
             ->get();
 
         return Inertia::render('Dashboard', [
-            'stats' => [
-                'totalArticles' => $totalArticles,
-                'totalCases' => $totalCases,
-                'totalLocations' => $totalLocations,
-            ],
-            'casesByCategory' => $casesByCategory,
-            'topRegions' => $topRegions,
-            'dailyTrend' => $dailyTrend,
+            'categories' => $categories,
+            'urgencyScores' => $urgencyScores,
         ]);
     }
 }

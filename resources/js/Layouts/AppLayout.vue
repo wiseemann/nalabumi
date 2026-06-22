@@ -24,10 +24,6 @@ defineProps({
                         <span class="material-symbols-outlined text-[18px]">analytics</span>
                         Analytics
                     </Link>
-                    <Link href="/map" :class="[route().current('map') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
-                        <span class="material-symbols-outlined text-[18px]">map</span>
-                        Peta
-                    </Link>
                     <Link href="/archive" :class="[route().current('archive') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
                         <span class="material-symbols-outlined text-[18px]">archive</span>
                         Arsip
