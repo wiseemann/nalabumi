@@ -13,8 +13,20 @@ class MapController extends Controller
     {
         $categories = Category::all();
 
+        $urgencyScores = UrgencyScore::select('urgency_scores.*')
+            ->join(
+                \DB::raw('(SELECT location_id, MAX(date) as max_date FROM urgency_scores GROUP BY location_id) as latest'),
+                function ($join) {
+                    $join->on('urgency_scores.location_id', '=', 'latest.location_id')
+                        ->on('urgency_scores.date', '=', 'latest.max_date');
+                }
+            )
+            ->with('location')
+            ->get();
+
         return Inertia::render('Map', [
             'categories' => $categories,
+            'urgencyScores' => $urgencyScores,
         ]);
     }
 

@@ -10,10 +10,10 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         return createApp({ render: () => h(App, props) })
             .use(plugin)
-            .use(ZiggyVue)
+            .use(ZiggyVue, window.Ziggy)
             .mount(el);
     },
     progress: {
-        color: '#10b981',
+        color: '#436526',
     },
 });

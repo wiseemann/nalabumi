@@ -11,41 +11,41 @@ defineProps({
 
 <template>
     <Head :title="title" />
-    <div class="min-h-screen bg-gray-50">
-        <nav class="bg-white border-b border-gray-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between h-16">
-                    <div class="flex">
-                        <div class="flex-shrink-0 flex items-center">
-                            <Link href="/" class="text-xl font-bold text-emerald-600">
-                                Nalabumi AI
-                            </Link>
-                        </div>
-                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                            <Link
-                                href="/"
-                                :class="[route().current('dashboard') ? 'border-emerald-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium']"
-                            >
-                                Dashboard
-                            </Link>
-                            <Link
-                                href="/map"
-                                :class="[route().current('map') ? 'border-emerald-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium']"
-                            >
-                                Peta Lingkungan
-                            </Link>
-                            <Link
-                                href="/chat"
-                                :class="[route().current('chat') ? 'border-emerald-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700', 'inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium']"
-                            >
-                                Chatbot
-                            </Link>
-                        </div>
-                    </div>
+    <div class="min-h-screen flex flex-col">
+        <nav class="fixed top-0 w-full z-50 flex justify-between items-center px-10 md:px-10 h-16 bg-surface border-b border-outline-variant shadow-sm">
+            <div class="flex items-center gap-8">
+                <Link href="/" class="text-primary font-bold text-xl tracking-tight">Nalabumi</Link>
+                <div class="hidden md:flex items-center gap-6">
+                    <Link href="/" :class="[route().current('dashboard') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                        <span class="material-symbols-outlined text-[18px]">dashboard</span>
+                        Dashboard
+                    </Link>
+                    <Link href="/analytics" :class="[route().current('analytics') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                        <span class="material-symbols-outlined text-[18px]">analytics</span>
+                        Analytics
+                    </Link>
+                    <Link href="/map" :class="[route().current('map') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                        <span class="material-symbols-outlined text-[18px]">map</span>
+                        Peta
+                    </Link>
+                    <Link href="/archive" :class="[route().current('archive') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                        <span class="material-symbols-outlined text-[18px]">archive</span>
+                        Arsip
+                    </Link>
+                    <Link href="/chat" :class="[route().current('chat') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
+                        <span class="material-symbols-outlined text-[18px]">smart_toy</span>
+                        Chatbot
+                    </Link>
                 </div>
             </div>
+            <div class="flex items-center gap-4">
+                <button class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg font-semibold text-xs hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+                    Admin Login
+                </button>
+            </div>
         </nav>
-        <main>
+        <main class="flex-1 pt-16">
             <slot />
         </main>
     </div>

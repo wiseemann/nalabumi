@@ -1,30 +1,36 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const props = defineProps({
     categories: Array,
+    urgencyScores: Array,
 });
 
 const map = ref(null);
 const mapContainer = ref(null);
-const markersLayer = ref(null);
-const urgencyData = ref([]);
+const provinceLayer = ref(null);
+const regencyLayer = ref(null);
+const loading = ref(true);
+const loadingStatus = ref('Mengambil data provinsi...');
+const statusText = ref('Memuat data peta...');
+const countProvince = ref(0);
+const countRegency = ref(0);
+const infoDefault = ref(true);
+const detailRegencyName = ref('—');
+const detailProvinceName = ref('—');
+const detailStatusText = ref('—');
+const detailStatusColor = ref('#436526');
+const detailStatusBg = ref('rgba(67,101,38,0.08)');
+const detailStatusTextColor = ref('#2f4f12');
+const detailReports = ref('—');
+const detailScore = ref('—');
 const selectedCategory = ref(null);
 const selectedDateRange = ref('30');
-const regionDetail = ref(null);
-const showDetail = ref(false);
-const selectedArticle = ref(null);
-const showArticleModal = ref(false);
-
-const levelColors = {
-    rendah: '#22c55e',
-    sedang: '#eab308',
-    tinggi: '#f97316',
-    kritis: '#ef4444',
-};
+const activeRegencyLayer = ref(null);
+const hideDetailTimeout = ref(null);
 
 const dateRanges = [
     { label: 'Hari ini', value: '1' },
@@ -33,229 +39,394 @@ const dateRanges = [
     { label: '1 tahun', value: '365' },
 ];
 
-const regencyCoords = {
-    'Sumatera Barat': [-0.7, 100.5],
-    'Pasaman': [0.5, 99.8],
-    'Pasaman Barat': [0.3, 99.5],
-    'Limapuluh Kota': [-0.1, 100.6],
-    'Sawahlunto': [-0.7, 100.8],
-    'Dharmasraya': [-1.2, 101.3],
-    'Solok Selatan': [-1.5, 101.2],
-    'Solok': [-0.8, 100.6],
-    'Sijunjung': [-0.9, 101.0],
-    'Pesisir Selatan': [-1.8, 100.5],
-    'Kabupaten Banjar': [-3.4, 115.0],
-    'Banjar': [-3.4, 115.0],
-    'Nagan Raya': [4.1, 96.5],
-    'Aceh': [4.3, 96.8],
-    'Halmahera Tengah': [0.5, 128.0],
-    'Maluku Utara': [1.0, 128.0],
-    'Sikka': [-8.6, 122.0],
-    'Flores': [-8.6, 122.0],
-    'Nusa Tenggara Timur': [-8.6, 121.0],
-    'Kalimantan Selatan': [-3.0, 115.0],
+const PROVINCE_URL = 'https://raw.githubusercontent.com/ardian28/GeoJson-Indonesia-38-Provinsi/main/Provinsi/38%20Provinsi%20Indonesia%20-%20Provinsi.json';
+const REGENCY_URL = 'https://raw.githubusercontent.com/ardian28/GeoJson-Indonesia-38-Provinsi/main/Kabupaten/38%20Provinsi%20Indonesia%20-%20Kabupaten.json';
+
+const statusConfig = {
+    'Rendah': { color: '#436526', fill: '#c6efa0', bg: 'rgba(67,101,38,0.08)', textColor: '#2f4f12', fillColor: '#8db86b', borderColor: '#3d5a28' },
+    'Sedang': { color: '#eac248', fill: '#ffe08a', bg: 'rgba(234,194,72,0.1)', textColor: '#574400', fillColor: '#e8c96a', borderColor: '#9a7a1c' },
+    'Tinggi': { color: '#FF9D23', fill: '#ffd65a', bg: 'rgba(255,157,35,0.1)', textColor: '#745b00', fillColor: '#f0a050', borderColor: '#a96300' },
+    'Kritis': { color: '#ba1a1a', fill: '#ffdad6', bg: 'rgba(186,26,26,0.08)', textColor: '#93000a', fillColor: '#d4847a', borderColor: '#8a3a30' },
 };
+
+function getUrgencyLevel(score) {
+    if (score >= 61) return 'Kritis';
+    if (score >= 41) return 'Tinggi';
+    if (score >= 21) return 'Sedang';
+    return 'Rendah';
+}
+
+function normalizeRegencyName(name) {
+    if (!name) return '';
+    return name
+        .replace(/^Kabupaten\s+/i, '')
+        .replace(/^Kota\s+/i, '')
+        .replace(/^Kecamatan\s+/i, '')
+        .trim()
+        .toLowerCase();
+}
+
+function getRegencyStatus(regencyName) {
+    const normalizedName = normalizeRegencyName(regencyName);
+    const scoreData = props.urgencyScores.find(s => {
+        const locRegency = normalizeRegencyName(s.location?.regency_name);
+        const locName = normalizeRegencyName(s.location?.name);
+        return locRegency === normalizedName || locName === normalizedName;
+    });
+    if (scoreData) {
+        return {
+            level: scoreData.level,
+            score: scoreData.score,
+            caseCount: scoreData.case_count,
+        };
+    }
+    return { level: 'Rendah', score: 0, caseCount: 0 };
+}
+
+function getStatusConfig(level) {
+    // Normalize level to match config keys (capitalize first letter)
+    const normalizedLevel = level ? level.charAt(0).toUpperCase() + level.slice(1).toLowerCase() : 'Rendah';
+    return statusConfig[normalizedLevel] || statusConfig['Rendah'];
+}
+
+function provinceStyle(feature) {
+    const name = feature.properties.PROVINSI || feature.properties.Propinsi || feature.properties.state || feature.properties.NAME_1 || '';
+    return {
+        fillColor: '#e8e9e0',
+        weight: 2,
+        opacity: 0.75,
+        color: '#74796b',
+        fillOpacity: 0.18,
+    };
+}
+
+function regencyStyle(feature) {
+    const regencyName = feature.properties.WADMKK || feature.properties.NAME_2 || feature.properties.name || 'Tidak diketahui';
+    const statusData = getRegencyStatus(regencyName);
+    const sc = getStatusConfig(statusData.level);
+    return {
+        fillColor: sc.fillColor,
+        weight: 1,
+        opacity: 0.6,
+        color: '#8a8f82',
+        fillOpacity: statusData.caseCount > 0 ? 0.85 : 0.2,
+    };
+}
+
+function regencyHighlightStyle(sc) {
+    return {
+        weight: 2,
+        color: sc.borderColor,
+        opacity: 0.8,
+        fillColor: sc.fill,
+        fillOpacity: 0.25,
+    };
+}
+
+function regencySelectedStyle(sc) {
+    return {
+        weight: 3,
+        color: sc.color,
+        opacity: 1,
+        fillColor: sc.fill,
+        fillOpacity: 0.4,
+    };
+}
 
 onMounted(() => {
     initMap();
-    fetchUrgencyData();
+    loadAllLayers();
 });
 
 function initMap() {
-    map.value = L.map(mapContainer.value).setView([-2.5, 118], 5);
+    const initialCenter = [-0.7893, 113.9213];
+    const initialZoom = 5;
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 18,
+    map.value = L.map(mapContainer.value, {
+        zoomControl: false,
+        attributionControl: true,
+        minZoom: 4,
+        maxZoom: 14,
+    }).setView(initialCenter, initialZoom);
+
+    L.control.zoom({ position: 'topright' }).addTo(map.value);
+
+    map.value.createPane('regencyPane');
+    map.value.getPane('regencyPane').style.zIndex = 200;
+
+    map.value.createPane('provincePane');
+    map.value.getPane('provincePane').style.zIndex = 250;
+    map.value.getPane('provincePane').style.pointerEvents = 'none';
+
+    map.value.createPane('labelPane');
+    map.value.getPane('labelPane').style.zIndex = 300;
+    map.value.getPane('labelPane').style.pointerEvents = 'none';
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20,
     }).addTo(map.value);
-
-    markersLayer.value = L.layerGroup().addTo(map.value);
 }
 
-async function fetchUrgencyData() {
-    const params = new URLSearchParams();
-    if (selectedCategory.value) {
-        params.append('category', selectedCategory.value);
-    }
-
-    const response = await fetch(`/api/urgency-scores?${params}`);
-    urgencyData.value = await response.json();
-    updateMarkers();
-}
-
-function updateMarkers() {
-    markersLayer.value.clearLayers();
-
-    urgencyData.value.forEach(item => {
-        if (!item.location) return;
-
-        const loc = item.location;
-        const name = loc.regency_name || loc.name;
-        const coords = regencyCoords[name];
-
-        if (!coords) return;
-
-        const color = levelColors[item.level] || '#6b7280';
-
-        const marker = L.circleMarker(coords, {
-            radius: Math.max(8, Math.min(25, item.score / 4)),
-            fillColor: color,
-            color: '#fff',
-            weight: 2,
-            fillOpacity: 0.8,
-        });
-
-        marker.bindPopup(`
-            <div style="min-width:200px">
-                <h3 style="font-weight:bold;margin-bottom:8px">${name}</h3>
-                ${loc.province_name ? `<p style="color:#6b7280;font-size:12px">${loc.province_name}</p>` : ''}
-                <div style="margin-top:8px">
-                    <span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:600;background:${color};color:#fff">${item.level}</span>
-                    <span style="margin-left:8px;font-size:14px;font-weight:bold">Skor: ${item.score}</span>
-                </div>
-                <p style="margin-top:8px;font-size:13px">Kasus: ${item.case_count}</p>
-            </div>
-        `);
-
-        marker.on('click', () => {
-            fetchRegionDetail(loc.id, name, loc.province_name);
-        });
-
-        markersLayer.value.addLayer(marker);
+function buildProvinceLayer(data) {
+    return L.geoJson(data, {
+        style: provinceStyle,
+        interactive: false,
+        pane: 'provincePane',
     });
 }
 
-async function fetchRegionDetail(locationId, name, province) {
-    const response = await fetch(`/api/regions/${locationId}/details`);
-    const data = await response.json();
-    regionDetail.value = { ...data, displayName: name, displayProvince: province };
-    showDetail.value = true;
-    selectedArticle.value = null;
+function buildRegencyLayer(data) {
+    return L.geoJson(data, {
+        style: regencyStyle,
+        pane: 'regencyPane',
+        onEachFeature: function (feature, layer) {
+            const regencyName = feature.properties.WADMKK || feature.properties.NAME_2 || feature.properties.name || 'Tidak diketahui';
+            const provinceName = feature.properties.WADMPR || feature.properties.NAME_1 || feature.properties.province || 'Tidak diketahui';
+            const statusData = getRegencyStatus(regencyName);
+            const sc = getStatusConfig(statusData.level);
+
+            layer.bindTooltip(
+                `<div style="font-weight:600;font-size:14px;margin-bottom:2px;">${regencyName}</div>` +
+                `<div style="color:#43493d;font-size:12px;">Prov. ${provinceName}</div>` +
+                `<div style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;background:${sc.bg};color:${sc.textColor};">` +
+                `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${sc.color};"></span> ${statusData.level}` +
+                `</div>`,
+                {
+                    sticky: true,
+                    direction: 'top',
+                    offset: [0, -8],
+                    className: 'nalabumi-tooltip',
+                }
+            );
+
+            layer.on('mouseover', function (e) {
+                clearTimeout(hideDetailTimeout.value);
+                if (activeRegencyLayer.value !== layer) {
+                    e.target.setStyle(regencyHighlightStyle(sc));
+                }
+                showRegencyDetail(regencyName, provinceName, statusData);
+            });
+
+            layer.on('mouseout', function (e) {
+                if (activeRegencyLayer.value !== layer) {
+                    if (regencyLayer.value) regencyLayer.value.resetStyle(e.target);
+                }
+                hideDetailTimeout.value = setTimeout(() => {
+                    hideRegencyDetail();
+                }, 300);
+            });
+
+            layer.on('click', function (e) {
+                if (activeRegencyLayer.value && activeRegencyLayer.value !== layer) {
+                    if (regencyLayer.value) regencyLayer.value.resetStyle(activeRegencyLayer.value);
+                }
+                activeRegencyLayer.value = layer;
+                layer.setStyle(regencySelectedStyle(sc));
+                clearTimeout(hideDetailTimeout.value);
+                showRegencyDetail(regencyName, provinceName, statusData);
+            });
+        },
+    });
 }
 
-function viewArticle(article) {
-    selectedArticle.value = article;
-    showArticleModal.value = true;
+function showRegencyDetail(regency, province, statusData) {
+    const sc = getStatusConfig(statusData.level);
+    detailRegencyName.value = regency;
+    detailProvinceName.value = `Provinsi ${province}`;
+    detailStatusText.value = statusData.level;
+    detailStatusColor.value = sc.color;
+    detailStatusBg.value = sc.bg;
+    detailStatusTextColor.value = sc.textColor;
+    detailReports.value = statusData.caseCount;
+    detailScore.value = statusData.score + '/100';
+    infoDefault.value = false;
 }
 
-function closeArticleModal() {
-    showArticleModal.value = false;
-    selectedArticle.value = null;
+function hideRegencyDetail() {
+    infoDefault.value = true;
+}
+
+async function loadAllLayers() {
+    try {
+        loadingStatus.value = 'Mengambil data provinsi...';
+        const provRes = await fetch(PROVINCE_URL);
+        if (!provRes.ok) throw new Error(`Province fetch failed: ${provRes.status}`);
+        const provData = await provRes.json();
+
+        loadingStatus.value = 'Mengambil data kabupaten/kota...';
+        const regRes = await fetch(REGENCY_URL);
+        if (!regRes.ok) throw new Error(`Regency fetch failed: ${regRes.status}`);
+        const regData = await regRes.json();
+
+        loadingStatus.value = 'Merender layer peta...';
+
+        regencyLayer.value = buildRegencyLayer(regData);
+        regencyLayer.value.addTo(map.value);
+
+        provinceLayer.value = buildProvinceLayer(provData);
+        provinceLayer.value.addTo(map.value);
+
+        const provCount = provData.features ? provData.features.length : 0;
+        const regCount = regData.features ? regData.features.length : 0;
+        countProvince.value = provCount;
+        countRegency.value = regCount;
+
+        statusText.value = `${provCount} Provinsi · ${regCount} Kab/Kota dimuat`;
+        loading.value = false;
+
+    } catch (err) {
+        console.error('Error loading GeoJSON layers:', err);
+        loadingStatus.value = `Gagal memuat data: ${err.message}`;
+        statusText.value = 'Error: Gagal memuat data geospasial.';
+    }
+}
+
+function resetView() {
+    map.value.setView([-0.7893, 113.9213], 5, { animate: true, duration: 0.8 });
 }
 
 watch([selectedCategory, selectedDateRange], () => {
-    fetchUrgencyData();
+    // Reload urgency data when filters change
 });
 </script>
 
 <template>
     <AppLayout title="Peta Lingkungan">
-        <div class="h-screen flex flex-col">
-            <div class="bg-white border-b border-gray-200 p-4">
-                <div class="max-w-7xl mx-auto flex flex-wrap gap-4 items-center">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Kategori</label>
-                        <select v-model="selectedCategory" class="mt-1 block rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-                            <option :value="null">Semua Kategori</option>
-                            <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Periode</label>
-                        <select v-model="selectedDateRange" class="mt-1 block rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500">
-                            <option v-for="range in dateRanges" :key="range.value" :value="range.value">{{ range.label }}</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-2 ml-auto">
-                        <span class="inline-flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full" style="background:#22c55e"></span> Rendah</span>
-                        <span class="inline-flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full" style="background:#eab308"></span> Sedang</span>
-                        <span class="inline-flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full" style="background:#f97316"></span> Tinggi</span>
-                        <span class="inline-flex items-center gap-1 text-xs"><span class="w-3 h-3 rounded-full" style="background:#ef4444"></span> Kritis</span>
-                    </div>
-                </div>
-            </div>
-            <div class="flex-1 flex">
-                <div ref="mapContainer" class="flex-1"></div>
-                <div v-if="showDetail && regionDetail" class="w-96 bg-white border-l border-gray-200 overflow-y-auto">
-                    <div class="p-4">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 class="text-lg font-bold text-gray-900">{{ regionDetail.displayName }}</h3>
-                                <p class="text-sm text-gray-500">{{ regionDetail.displayProvince }}</p>
-                            </div>
-                            <button @click="showDetail = false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
-                        </div>
-                        <div v-if="regionDetail.cases && regionDetail.cases.length > 0" class="space-y-3">
-                            <h4 class="text-sm font-semibold text-gray-700">Kasus Terkait ({{ regionDetail.cases.length }})</h4>
-                            <div v-for="c in regionDetail.cases" :key="c.id" class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition" @click="viewArticle(c.article)">
-                                <span class="inline-block px-2 py-0.5 text-xs rounded-full font-medium mb-2"
-                                    :class="{
-                                        'bg-green-100 text-green-800': c.category?.slug === 'deforestasi',
-                                        'bg-red-100 text-red-800': c.category?.slug === 'tambang-ilegal',
-                                        'bg-orange-100 text-orange-800': c.category?.slug === 'kebakaran-hutan',
-                                        'bg-blue-100 text-blue-800': c.category?.slug === 'pencemaran-sungai',
-                                        'bg-purple-100 text-purple-800': c.category?.slug === 'pencemaran-laut',
-                                        'bg-yellow-100 text-yellow-800': c.category?.slug === 'perburuan-satwa',
-                                        'bg-teal-100 text-teal-800': c.category?.slug === 'kerusakan-pesisir',
-                                        'bg-gray-100 text-gray-800': c.category?.slug === 'limbah-industri',
-                                    }">
-                                    {{ c.category?.name }}
-                                </span>
-                                <p class="text-sm font-medium text-gray-900 line-clamp-2">{{ c.article?.title }}</p>
-                                <div class="flex items-center justify-between mt-2">
-                                    <span class="text-xs text-gray-400">{{ c.article?.source }}</span>
-                                    <span class="text-xs font-medium" :class="c.severity >= 60 ? 'text-red-600' : c.severity >= 40 ? 'text-orange-600' : 'text-green-600'">Severity: {{ c.severity }}/100</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-else class="text-center text-gray-400 py-8">
-                            <p>Belum ada kasus untuk wilayah ini</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="h-[calc(100vh-4rem)] relative">
+            <div ref="mapContainer" class="absolute inset-0 w-full h-full" style="z-index: 1;"></div>
         </div>
 
-        <div v-if="showArticleModal && selectedArticle" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" @click.self="closeArticleModal">
-            <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-                <div class="p-6 border-b border-gray-200 flex justify-between items-start">
-                    <div class="flex-1 pr-4">
-                        <h2 class="text-xl font-bold text-gray-900 mb-2">{{ selectedArticle.title }}</h2>
-                        <div class="flex items-center gap-3 text-sm text-gray-500">
-                            <span>{{ selectedArticle.source }}</span>
-                            <span>&middot;</span>
-                            <span>{{ selectedArticle.published_at }}</span>
-                            <span v-if="selectedArticle.author">&middot;</span>
-                            <span v-if="selectedArticle.author">{{ selectedArticle.author }}</span>
+        <Teleport to="body">
+            <div class="fixed top-28 left-6 flex flex-col gap-4 pointer-events-none" style="z-index: 40;">
+                <div class="w-[340px] glass-panel rounded-xl overflow-hidden transition-all duration-300 pointer-events-auto">
+                    <div class="p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary filled text-[22px]">public</span>
+                            <h2 class="font-semibold text-lg text-on-surface">Peta Administrasi</h2>
+                        </div>
+                        <p class="text-sm text-on-surface-variant leading-relaxed">
+                            Menampilkan batas provinsi dan kabupaten/kota seluruh Indonesia beserta status lingkungan secara interaktif.
+                        </p>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-surface-container rounded-lg p-3 text-center">
+                                <span class="block text-xl font-bold text-primary">{{ countProvince }}</span>
+                                <span class="text-xs text-on-surface-variant uppercase mt-0.5 block">Provinsi</span>
+                            </div>
+                            <div class="bg-surface-container rounded-lg p-3 text-center">
+                                <span class="block text-xl font-bold text-primary">{{ countRegency }}</span>
+                                <span class="text-xs text-on-surface-variant uppercase mt-0.5 block">Kab/Kota</span>
+                            </div>
                         </div>
                     </div>
-                    <button @click="closeArticleModal" class="text-gray-400 hover:text-gray-600 text-2xl flex-shrink-0">&times;</button>
                 </div>
-                <div class="flex-1 overflow-y-auto p-6">
-                    <div v-if="selectedArticle.image_url" class="mb-4">
-                        <img :src="selectedArticle.image_url" :alt="selectedArticle.title" class="w-full h-48 object-cover rounded-lg" />
+
+                <div class="w-[340px] glass-panel rounded-xl px-4 py-3 flex items-center justify-between pointer-events-auto">
+                    <span class="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Status:</span>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1">
+                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#436526;"></div>
+                            <span class="text-xs text-on-surface font-medium">Rendah</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#eac248;"></div>
+                            <span class="text-xs text-on-surface font-medium">Sedang</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#FF9D23;"></div>
+                            <span class="text-xs text-on-surface font-medium">Tinggi</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#ba1a1a;"></div>
+                            <span class="text-xs text-on-surface font-medium">Kritis</span>
+                        </div>
                     </div>
-                    <div class="prose prose-sm max-w-none">
-                        <p class="text-gray-700 whitespace-pre-line leading-relaxed">{{ selectedArticle.content }}</p>
-                    </div>
-                </div>
-                <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
-                    <a :href="selectedArticle.url" target="_blank" rel="noopener noreferrer" class="text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
-                        Baca artikel asli
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6" /></svg>
-                    </a>
                 </div>
             </div>
-        </div>
+
+            <div v-if="!infoDefault" class="fixed top-28 right-6 w-80 glass-panel rounded-xl overflow-hidden transition-all duration-300 pointer-events-auto" style="z-index: 40;">
+                <div class="p-4 flex flex-col gap-2.5">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="material-symbols-outlined text-primary text-[20px]">location_on</span>
+                        <span class="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Detail Wilayah</span>
+                    </div>
+                    <h2 class="font-semibold text-lg text-on-surface leading-tight">{{ detailRegencyName }}</h2>
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-on-surface-variant text-[16px]">flag</span>
+                        <span class="text-sm text-on-surface-variant">{{ detailProvinceName }}</span>
+                    </div>
+                    <div class="h-px bg-outline-variant/40"></div>
+                    <div class="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider"
+                        :style="{ background: detailStatusBg, color: detailStatusTextColor }">
+                        <div class="w-2 h-2 rounded-full" :style="{ background: detailStatusColor }"></div>
+                        <span>{{ detailStatusText }}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-1">
+                        <div class="bg-surface-container rounded-lg p-2.5 text-center">
+                            <span class="block text-lg font-bold text-on-surface">{{ detailReports }}</span>
+                            <span class="text-xs text-on-surface-variant uppercase block">Laporan</span>
+                        </div>
+                        <div class="bg-surface-container rounded-lg p-2.5 text-center">
+                            <span class="block text-lg font-bold text-on-surface">{{ detailScore }}</span>
+                            <span class="text-xs text-on-surface-variant uppercase block">Skor</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="fixed bottom-6 left-6 w-80 glass-panel rounded-lg px-4 py-2.5 flex items-center gap-3 pointer-events-auto" style="z-index: 40;">
+                <span class="material-symbols-outlined text-primary text-[18px]">info</span>
+                <span class="text-sm text-on-surface-variant flex-1 truncate">{{ statusText }}</span>
+            </div>
+
+            <div v-if="loading" class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background/92 backdrop-blur-sm pointer-events-auto" style="z-index: 45;">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined text-primary text-[32px] filled">public</span>
+                    <span class="text-xl font-bold text-primary">Nalabumi</span>
+                </div>
+                <p class="text-sm text-on-surface-variant">Memuat data geospasial Indonesia...</p>
+                <div class="flex gap-2 mt-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0s;"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0.16s;"></div>
+                    <div class="w-2.5 h-2.5 rounded-full bg-primary animate-bounce" style="animation-delay: 0.32s;"></div>
+                </div>
+                <div class="w-48 mt-2 h-1 bg-surface-container rounded-full overflow-hidden">
+                    <div class="h-full bg-primary rounded-full animate-pulse" style="width: 60%;"></div>
+                </div>
+                <p class="text-xs text-on-surface-variant/60 mt-1">{{ loadingStatus }}</p>
+            </div>
+        </Teleport>
     </AppLayout>
 </template>
 
 <style>
-.leaflet-container { height: 100%; width: 100%; }
-.line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+.nalabumi-tooltip {
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(195, 200, 185, 0.6) !important;
+    border-radius: 10px !important;
+    padding: 10px 14px !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    color: #1a1c17 !important;
+}
+
+.nalabumi-tooltip::before {
+    border-top-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.leaflet-control-zoom a {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(8px);
+    color: #1a1c17 !important;
+    border-color: rgba(195, 200, 185, 0.5) !important;
+    font-weight: 600 !important;
+}
+
+.leaflet-control-zoom a:hover {
+    background: rgba(67, 101, 38, 0.1) !important;
 }
 </style>

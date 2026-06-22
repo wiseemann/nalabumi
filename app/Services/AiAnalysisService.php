@@ -114,7 +114,7 @@ PROMPT;
                 'Authorization' => "Bearer {$apiKey}",
             ])
             ->post($apiUrl, [
-                'model' => env('OPENCODE_MODEL', 'qwen3.6-plus'),
+                'model' => env('OPENCODE_MODEL', 'deepseek-v4-flash'),
                 'messages' => [
                     [
                         'role' => 'system',

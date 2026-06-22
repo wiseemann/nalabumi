@@ -35,7 +35,7 @@ class DashboardController extends Controller
         $dailyTrend = Article::selectRaw('DATE(created_at) as date, COUNT(*) as count')
             ->where('is_analyzed', true)
             ->groupBy('date')
-            ->orderByDesc('date')
+            ->orderBy('date')
             ->limit(30)
             ->get();
 

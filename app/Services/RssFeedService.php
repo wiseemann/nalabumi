@@ -15,22 +15,6 @@ class RssFeedService
             'url' => 'https://www.mongabay.co.id/feed/',
             'source' => 'Mongabay Indonesia',
         ],
-        [
-            'url' => 'https://www.republika.co.id/rss',
-            'source' => 'Republika',
-        ],
-        [
-            'url' => 'https://www.cnnindonesia.com/nasional/rss',
-            'source' => 'CNN Indonesia Nasional',
-        ],
-        [
-            'url' => 'https://www.antaranews.com/rss/terkini.xml',
-            'source' => 'Antara Terkini',
-        ],
-        [
-            'url' => 'https://www.tempo.co/rss/nasional',
-            'source' => 'Tempo Nasional',
-        ],
     ];
 
     public function fetchAll(): array
