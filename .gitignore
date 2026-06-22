@@ -17,4 +17,8 @@ Thumbs.db
 /public/storage
 /storage/*.key
 /reference
-*.sql
+
+# Database files & dumps
+# *.sql
+# /database/database.sqlite
+# /.phpunit.result.cache
