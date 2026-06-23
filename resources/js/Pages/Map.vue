@@ -382,8 +382,7 @@ watch([selectedCategory, selectedDateRange], () => {
 
             <div v-if="loading" class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background/92 backdrop-blur-sm pointer-events-auto" style="z-index: 45;">
                 <div class="flex items-center gap-3">
-                    <span class="material-symbols-outlined text-primary text-[32px] filled">public</span>
-                    <span class="text-xl font-bold text-primary">Nalabumi</span>
+                    <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-16 w-auto object-contain" />
                 </div>
                 <p class="text-sm text-on-surface-variant">Memuat data geospasial Indonesia...</p>
                 <div class="flex gap-2 mt-2">

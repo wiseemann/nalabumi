@@ -226,7 +226,7 @@ function buildRegencyLayer(data) {
                 `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${sc.color};"></span> ${statusData.level}` +
                 `</div>` +
                 `<div style="margin-top:6px;font-size:10px;color:#74796b;display:flex;align-items:center;gap:4px;">` +
-                `<span style="font-size:12px;">touch_app</span> Klik untuk lihat detail` +
+                `<span class="material-symbols-outlined" style="font-size:12px;">touch_app</span> Klik untuk lihat detail` +
                 `</div>`;
 
             // Use a fully manual tooltip — NOT bindTooltip — so Leaflet's internal
@@ -450,8 +450,7 @@ watch([selectedCategory, selectedDateRange], () => {
 
             <div v-if="loading" class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background/92 backdrop-blur-sm pointer-events-auto" style="z-index: 45;">
                 <div class="flex items-center gap-3">
-                    <span class="material-symbols-outlined text-primary text-[32px] filled">public</span>
-                    <span class="text-xl font-bold text-primary">Nalabumi</span>
+                    <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-16 w-auto object-contain" />
                 </div>
                 <p class="text-sm text-on-surface-variant">Memuat data geospasial Indonesia...</p>
                 <div class="flex gap-2 mt-2">
