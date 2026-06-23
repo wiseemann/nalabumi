@@ -1,11 +1,17 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import FloatingChat from '@/Components/FloatingChat.vue';
 
 defineProps({
     title: {
         type: String,
         default: 'Nalabumi AI'
     }
+});
+
+const shouldShowFloatingChat = computed(() => {
+    return !route().current('landing') && !route().current('chat');
 });
 </script>
 
@@ -46,5 +52,7 @@ defineProps({
         <main class="flex-1 pt-16">
             <slot />
         </main>
+        
+        <FloatingChat v-if="shouldShowFloatingChat" />
     </div>
 </template>

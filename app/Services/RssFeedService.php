@@ -15,6 +15,58 @@ class RssFeedService
             'url' => 'https://www.mongabay.co.id/feed/',
             'source' => 'Mongabay Indonesia',
         ],
+        [
+            'url' => 'https://jurno.id/feed/',
+            'source' => 'Jurno.id',
+        ],
+        [
+            'url' => 'https://www.antaranews.com/rss/terkini.xml',
+            'source' => 'Antara News',
+        ],
+        [
+            'url' => 'https://www.cnnindonesia.com/nasional/rss',
+            'source' => 'CNN Indonesia',
+        ],
+        [
+            'url' => 'https://timesindonesia.co.id/rss',
+            'source' => 'Times Indonesia',
+        ],
+        [
+            'url' => 'https://www.jpnn.com/index.php?mib=rss',
+            'source' => 'JPNN',
+        ],
+        [
+            'url' => 'https://wartakota.tribunnews.com/rss',
+            'source' => 'Warta Kota',
+        ],
+        [
+            'url' => 'https://www.greenpeace.org/indonesia/feed/',
+            'source' => 'Greenpeace Indonesia',
+        ],
+        [
+            'url' => 'https://www.walhi.or.id/feed/',
+            'source' => 'WALHI',
+        ],
+        [
+            'url' => 'https://fwi.or.id/feed/',
+            'source' => 'Forest Watch Indonesia',
+        ],
+        [
+            'url' => 'https://betahita.id/feed/',
+            'source' => 'Betahita',
+        ],
+        [
+            'url' => 'https://projectmultatuli.org/feed/',
+            'source' => 'Project Multatuli',
+        ],
+        [
+            'url' => 'https://www.jatam.org/feed/',
+            'source' => 'JATAM (Jaringan Advokasi Tambang)',
+        ],
+        [
+            'url' => 'https://auriga.or.id/feed/',
+            'source' => 'Auriga Nusantara',
+        ],
     ];
 
     public function fetchAll(): array

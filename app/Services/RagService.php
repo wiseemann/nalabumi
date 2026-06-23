@@ -20,6 +20,7 @@ class RagService
         if (!$queryEmbedding) {
             return [
                 'answer' => 'Maaf, terjadi kesalahan dalam memproses pertanyaan Anda.',
+                'thought' => null,
                 'sources' => [],
             ];
         }
@@ -29,16 +30,18 @@ class RagService
         if (empty($searchResults)) {
             return [
                 'answer' => 'Maaf, saya tidak menemukan informasi yang relevan dengan pertanyaan Anda dalam database.',
+                'thought' => null,
                 'sources' => [],
             ];
         }
 
         $context = $this->buildContext($searchResults);
-        $answer = $this->generateAnswer($question, $context);
+        $generated = $this->generateAnswer($question, $context);
         $sources = $this->extractSources($searchResults);
 
         return [
-            'answer' => $answer,
+            'answer' => $generated['answer'],
+            'thought' => $generated['thought'],
             'sources' => $sources,
         ];
     }
@@ -63,7 +66,7 @@ class RagService
         return implode("\n\n---\n\n", $contextParts);
     }
 
-    protected function generateAnswer(string $question, string $context): string
+    protected function generateAnswer(string $question, string $context): array
     {
         $apiUrl = env('OPENCODE_API_URL');
         $apiKey = env('OPENCODE_API_KEY');
@@ -108,11 +111,26 @@ PROMPT;
             }
 
             $data = $response->json();
-            return $data['choices'][0]['message']['content'] ?? 'Maaf, saya tidak dapat memproses jawaban.';
+            $message = $data['choices'][0]['message'] ?? [];
+            $content = $message['content'] ?? 'Maaf, saya tidak dapat memproses jawaban.';
+            $thoughtProcess = $message['reasoning_content'] ?? null;
+
+            if (!$thoughtProcess && preg_match('/<think>(.*?)<\/think>/is', $content, $matches)) {
+                $thoughtProcess = trim($matches[1]);
+                $content = trim(str_replace($matches[0], '', $content));
+            }
+
+            return [
+                'answer' => $content,
+                'thought' => $thoughtProcess,
+            ];
 
         } catch (\Exception $e) {
             Log::error("RAG answer generation failed: {$e->getMessage()}");
-            return 'Maaf, terjadi kesalahan dalam memproses jawaban Anda.';
+            return [
+                'answer' => 'Maaf, terjadi kesalahan dalam memproses jawaban Anda.',
+                'thought' => null,
+            ];
         }
     }
 

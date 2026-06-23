@@ -13,6 +13,7 @@ const props = defineProps({
     cases: Array,
     pagination: Object,
     filters: Object,
+    from: String,
 });
 
 // Filters
@@ -103,9 +104,9 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
 
             <!-- Back + Header -->
             <div class="flex flex-col gap-4">
-                <Link href="/" class="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold uppercase tracking-wider w-fit">
+                <Link :href="from === 'analytics' ? '/analytics' : '/dashboard'" class="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors text-xs font-semibold uppercase tracking-wider w-fit">
                     <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-                    Kembali ke Peta Nasional
+                    Kembali ke {{ from === 'analytics' ? 'Analitik' : 'Peta Nasional' }}
                 </Link>
 
                 <div>

@@ -38,6 +38,7 @@ class RegencyController extends Controller
                 'cases' => [],
                 'pagination' => ['total' => 0, 'perPage' => $perPage, 'currentPage' => 1, 'lastPage' => 1],
                 'filters' => compact('search', 'filterCategory', 'filterDateFrom', 'filterDateTo', 'filterSeverity'),
+                'from' => $request->get('from', 'dashboard'),
             ]);
         }
 
@@ -134,6 +135,7 @@ class RegencyController extends Controller
                 'date_to' => $filterDateTo,
                 'severity' => $filterSeverity,
             ],
+            'from' => $request->get('from', 'dashboard'),
         ]);
     }
 }

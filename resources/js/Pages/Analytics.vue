@@ -1,6 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
+import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
     // Dashboard (overview) data
@@ -163,6 +164,7 @@ const overviewCategoryChartSeries = [{
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="border-b border-outline-variant">
+                                    <th class="py-3 px-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider w-12 text-center">#</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Wilayah</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Provinsi</th>
                                     <th class="py-3 px-4 text-xs font-semibold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
@@ -170,9 +172,24 @@ const overviewCategoryChartSeries = [{
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="region in topRegions" :key="region.id" class="border-b border-outline-variant/50 hover:bg-surface-container-lowest transition-colors">
-                                    <td class="py-4 px-4 font-medium text-on-surface">{{ region.regency_name || region.name }}</td>
-                                    <td class="py-4 px-4 text-on-surface-variant">{{ region.province_name }}</td>
+                                <tr v-for="(region, index) in topRegions" :key="region.id" 
+                                    @click="router.visit(`/regency?regency=${encodeURIComponent(region.regency_name || region.name)}&province=${encodeURIComponent(region.province_name || '')}&from=analytics`)"
+                                    class="border-b border-outline-variant/50 hover:bg-surface-container transition-colors cursor-pointer group">
+                                    <td class="py-4 px-4 text-center">
+                                        <div class="inline-flex items-center justify-center w-7 h-7 rounded-full font-bold text-xs"
+                                            :class="{
+                                                'bg-primary text-on-primary shadow-sm': index === 0,
+                                                'bg-secondary text-on-secondary shadow-sm': index === 1,
+                                                'bg-tertiary text-on-tertiary shadow-sm': index === 2,
+                                                'bg-surface-variant text-on-surface-variant': index > 2
+                                            }">
+                                            {{ index + 1 }}
+                                        </div>
+                                    </td>
+                                    <td class="py-4 px-4 font-semibold text-on-surface group-hover:text-primary transition-colors">
+                                        {{ region.regency_name || region.name }}
+                                    </td>
+                                    <td class="py-4 px-4 text-on-surface-variant text-sm">{{ region.province_name }}</td>
                                     <td class="py-4 px-4 text-center">
                                         <span v-if="region.latest_urgency_score" class="inline-block px-3 py-1 rounded-full text-xs font-semibold"
                                             :class="{
@@ -185,7 +202,7 @@ const overviewCategoryChartSeries = [{
                                         </span>
                                         <span v-else class="text-on-surface-variant text-xs">—</span>
                                     </td>
-                                    <td class="py-4 px-4 text-right font-semibold text-on-surface">{{ region.cases_count }}</td>
+                                    <td class="py-4 px-4 text-right font-bold text-on-surface text-lg">{{ region.cases_count }}</td>
                                 </tr>
                             </tbody>
                         </table>

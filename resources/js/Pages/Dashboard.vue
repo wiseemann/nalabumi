@@ -501,4 +501,8 @@ watch([selectedCategory, selectedDateRange], () => {
 .leaflet-interactive {
     cursor: pointer !important;
 }
+
+.leaflet-interactive:focus {
+    outline: none !important;
+}
 </style>

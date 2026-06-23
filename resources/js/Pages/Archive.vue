@@ -41,6 +41,18 @@ function resetFilters() {
     router.get('/archive', {}, { preserveState: true });
 }
 
+function downloadCsv() {
+    const params = new URLSearchParams({
+        search: search.value,
+        region: region.value,
+        category: category.value,
+        date_from: dateFrom.value,
+        date_to: dateTo.value,
+        status: status.value,
+    });
+    window.location.href = `/archive/export?${params.toString()}`;
+}
+
 function openDrawer(article) {
     selectedArticle.value = article;
     drawerOpen.value = true;
@@ -120,6 +132,10 @@ function formatDate(dateStr) {
                         <button @click="resetFilters" class="bg-surface-variant hover:bg-surface-dim text-on-surface-variant text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] border border-outline-variant">
                             <span class="material-symbols-outlined text-[18px]">refresh</span>
                             Reset
+                        </button>
+                        <button @click="downloadCsv" class="bg-tertiary hover:bg-tertiary-container text-on-tertiary hover:text-on-tertiary-container text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] shadow-sm">
+                            <span class="material-symbols-outlined text-[18px]">download</span>
+                            Unduh CSV
                         </button>
                     </div>
                 </div>

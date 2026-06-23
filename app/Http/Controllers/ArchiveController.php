@@ -7,10 +7,84 @@ use App\Models\Category;
 use App\Models\Location;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ArchiveController extends Controller
 {
     public function index(Request $request)
+    {
+        $query = $this->buildArchiveQuery($request);
+        $articles = $query->paginate(20);
+
+        $categories = Category::all();
+        $provinces = Location::select('province_name')->distinct()->whereNotNull('province_name')->pluck('province_name');
+
+        return Inertia::render('Archive', [
+            'articles' => $articles,
+            'categories' => $categories,
+            'provinces' => $provinces,
+            'filters' => $request->only(['search', 'region', 'category', 'date_from', 'date_to', 'status']),
+        ]);
+    }
+
+    public function export(Request $request)
+    {
+        $query = $this->buildArchiveQuery($request);
+        $query->with(['cases']);
+        
+        $articles = $query->get();
+
+        $fileName = 'arsip-nalabumi-' . date('Y-m-d_H-i-s') . '.csv';
+
+        return response()->streamDownload(function () use ($articles) {
+            $handle = fopen('php://output', 'w');
+            
+            // Add BOM for Excel UTF-8 compatibility
+            fputs($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+            // Headers
+            fputcsv($handle, [
+                'Tanggal Publikasi',
+                'Wilayah Terkait',
+                'Kategori',
+                'Sumber',
+                'Judul Berita',
+                'Status Lingkungan (Severity)',
+                'Tautan Asli'
+            ]);
+
+            foreach ($articles as $article) {
+                // Calculate severity string
+                $severityStr = '—';
+                if ($article->cases && $article->cases->isNotEmpty()) {
+                    $sev = $article->cases->first()->severity;
+                    if ($sev >= 61) $severityStr = "Kritis ($sev)";
+                    elseif ($sev >= 41) $severityStr = "Tinggi ($sev)";
+                    elseif ($sev >= 21) $severityStr = "Sedang ($sev)";
+                    else $severityStr = "Rendah ($sev)";
+                }
+
+                $locations = $article->locations->map(fn($l) => $l->regency_name ?? $l->name)->join(', ');
+                $categories = $article->categories->map(fn($c) => $c->name)->join(', ');
+
+                fputcsv($handle, [
+                    $article->published_at ? $article->published_at->format('Y-m-d H:i') : '—',
+                    $locations,
+                    $categories,
+                    $article->source,
+                    $article->title,
+                    $severityStr,
+                    $article->url
+                ]);
+            }
+
+            fclose($handle);
+        }, $fileName, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    protected function buildArchiveQuery(Request $request)
     {
         $query = Article::with(['categories', 'locations'])
             ->where('is_analyzed', true)
@@ -33,7 +107,7 @@ class ArchiveController extends Controller
 
         if ($request->filled('category')) {
             $query->whereHas('categories', function ($q) use ($request) {
-                $q->where('id', $request->category);
+                $q->where('categories.id', $request->category);
             });
         }
 
@@ -60,16 +134,6 @@ class ArchiveController extends Controller
             }
         }
 
-        $articles = $query->paginate(20);
-
-        $categories = Category::all();
-        $provinces = Location::select('province_name')->distinct()->whereNotNull('province_name')->pluck('province_name');
-
-        return Inertia::render('Archive', [
-            'articles' => $articles,
-            'categories' => $categories,
-            'provinces' => $provinces,
-            'filters' => $request->only(['search', 'region', 'category', 'date_from', 'date_to', 'status']),
-        ]);
+        return $query;
     }
 }
