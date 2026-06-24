@@ -10,6 +10,10 @@ use App\Http\Controllers\RegencyController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok']);
+});
+
 Route::get('/', function () {
     return Inertia::render('Landing');
 })->name('landing');

@@ -2,6 +2,7 @@
 /vendor
 /.env
 env.docker
+env.prod
 /.env.backup
 /.phpunit.cache
 /phpunit.xml
