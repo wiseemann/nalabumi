@@ -8,9 +8,9 @@ done
 echo "Database ready."
 
 php artisan migrate --force
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+php artisan config:cache || echo "Warning: config:cache failed (non-fatal)"
+php artisan route:cache || echo "Warning: route:cache failed (non-fatal)"
+php artisan view:cache || echo "Warning: view:cache failed (non-fatal)"
 
 echo "Starting services..."
 exec supervisord -c /etc/supervisor/supervisord.conf

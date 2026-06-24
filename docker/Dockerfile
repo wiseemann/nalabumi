@@ -44,13 +44,13 @@ COPY docker/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+COPY --chown=app:app . /app
 COPY --from=vendor --chown=app:app /app/vendor /app/vendor
 COPY --from=frontend --chown=app:app /app/public/build /app/public/build
-COPY --chown=app:app . /app
 
 WORKDIR /app
 
-RUN php artisan storage:link
+RUN php artisan storage:link || true
 
 EXPOSE 80
 
