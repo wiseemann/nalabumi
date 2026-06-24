@@ -21,6 +21,8 @@ services:
         condition: service_started
       qdrant:
         condition: service_started
+      ollama:
+        condition: service_started
     networks:
       - nalabumi-network
     healthcheck:
@@ -84,6 +86,24 @@ services:
       retries: 3
       start_period: 20s
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nalabumi-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    expose:
+      - "11434"
+    networks:
+      - nalabumi-network
+    command: sh -c "ollama serve & sleep 2 && ollama pull bge-m3 && wait"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
 networks:
   nalabumi-network:
     driver: bridge
@@ -92,6 +112,8 @@ volumes:
   mariadb-data:
     driver: local
   qdrant-storage:
+    driver: local
+  ollama-data:
     driver: local
   valkey-data:
     driver: local
