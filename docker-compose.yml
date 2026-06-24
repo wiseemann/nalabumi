@@ -25,7 +25,7 @@ services:
       - mariadb
     networks:
       - nalabumi-network
-    command: php artisan serve --host=0.0.0.0 --port=8000
+    command: sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
 
   vite:
     build:
@@ -71,7 +71,7 @@ services:
       - mariadb
     networks:
       - nalabumi-network
-    command: php artisan queue:listen --tries=1 --timeout=0
+    command: sh -c "php artisan migrate --force && php artisan queue:listen --tries=1 --timeout=0"
 
   mariadb:
     image: mariadb:11.4
@@ -132,7 +132,7 @@ services:
       - qdrant
     networks:
       - nalabumi-network
-    command: sh -c "while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
+    command: sh -c "php artisan migrate --force && while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
 
 networks:
   nalabumi-network:
