@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\ArchiveController;
+use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\RegencyController;
@@ -18,3 +20,16 @@ Route::get('/archive', [ArchiveController::class, 'index'])->name('archive');
 Route::get('/archive/export', [ArchiveController::class, 'export'])->name('archive.export');
 Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 Route::get('/regency', [RegencyController::class, 'index'])->name('regency');
+
+// Admin Authentication
+Route::get('/admin/login', [AuthController::class, 'showLogin'])->name('admin.login');
+Route::post('/admin/login', [AuthController::class, 'login'])->name('admin.login.submit');
+Route::post('/admin/logout', [AuthController::class, 'logout'])->name('admin.logout');
+
+// Admin Panel (protected)
+Route::middleware(['auth', \App\Http\Middleware\AdminMiddleware::class])->prefix('admin')->group(function () {
+    Route::get('/', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+    Route::post('/articles', [AdminController::class, 'store'])->name('admin.articles.store');
+    Route::patch('/articles/{id}/verify', [AdminController::class, 'verify'])->name('admin.articles.verify');
+    Route::patch('/articles/{id}/reject', [AdminController::class, 'reject'])->name('admin.articles.reject');
+});

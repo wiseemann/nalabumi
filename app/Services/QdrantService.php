@@ -12,8 +12,8 @@ class QdrantService
 
     public function __construct()
     {
-        $this->host = rtrim(env('QDRANT_HOST', 'http://127.0.0.1:6333'), '/');
-        $this->collection = env('QDRANT_COLLECTION', 'articles');
+        $this->host = rtrim(config('services.qdrant.host', env('QDRANT_HOST', 'http://127.0.0.1:6333')), '/');
+        $this->collection = config('services.qdrant.collection', env('QDRANT_COLLECTION', 'articles'));
     }
 
     public function ensureCollection(): void

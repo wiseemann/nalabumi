@@ -35,4 +35,20 @@ return [
         ],
     ],
 
+    'opencode' => [
+        'api_url' => env('OPENCODE_API_URL'),
+        'api_key' => env('OPENCODE_API_KEY'),
+        'model' => env('OPENCODE_MODEL', 'deepseek-v4-flash'),
+    ],
+
+    'embedding' => [
+        'api_url' => env('EMBEDDING_API_URL'),
+        'model' => env('EMBEDDING_MODEL', 'bge-m3'),
+    ],
+
+    'qdrant' => [
+        'host' => env('QDRANT_HOST', 'http://127.0.0.1:6333'),
+        'collection' => env('QDRANT_COLLECTION', 'articles'),
+    ],
+
 ];

@@ -43,10 +43,10 @@ const shouldShowFloatingChat = computed(() => {
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <button class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg font-semibold text-xs hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-2">
+                <Link href="/admin/login" class="px-4 py-2 bg-primary-container text-on-primary-container rounded-lg font-semibold text-xs hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-2">
                     <span class="material-symbols-outlined text-[18px]">admin_panel_settings</span>
                     Admin Login
-                </button>
+                </Link>
             </div>
         </nav>
         <main class="flex-1 pt-16">

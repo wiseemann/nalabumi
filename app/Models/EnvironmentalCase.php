@@ -16,10 +16,12 @@ class EnvironmentalCase extends Model
         'cause',
         'impact',
         'severity',
+        'confidence',
     ];
 
     protected $casts = [
         'severity' => 'integer',
+        'confidence' => 'integer',
     ];
 
     public function article(): BelongsTo

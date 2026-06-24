@@ -49,10 +49,18 @@ class EmbeddingService
         }
 
         $locations = $article->locations->map(function ($loc) {
-            return $loc->full_location ?? $loc->name;
-        })->join(', ');
+            $locationParts = array_filter([
+                $loc->name,
+                $loc->regency_name,
+                $loc->province_name,
+            ]);
+            return implode(', ', $locationParts);
+        })->join('; ');
+
         if ($locations) {
+            // Repeat location info to strengthen its signal in the embedding
             $parts[] = "Locations: {$locations}";
+            $parts[] = "Wilayah terkait: {$locations}";
         }
 
         return implode("\n", $parts);
@@ -60,18 +68,20 @@ class EmbeddingService
 
     protected function callEmbeddingApi(string $text): array
     {
-        $apiUrl = env('EMBEDDING_API_URL');
+        $apiUrl = config('services.embedding.api_url') ?? env('EMBEDDING_API_URL');
 
         if (empty($apiUrl)) {
             throw new \Exception('Embedding API URL not configured');
         }
+
+        $model = config('services.embedding.model') ?? env('EMBEDDING_MODEL', 'bge-m3');
 
         $response = Http::timeout(120)
             ->withHeaders([
                 'Content-Type' => 'application/json',
             ])
             ->post($apiUrl, [
-                'model' => env('EMBEDDING_MODEL', 'bge-m3'),
+                'model' => $model,
                 'input' => $text,
             ]);
 

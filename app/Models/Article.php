@@ -19,8 +19,11 @@ class Article extends Model
         'is_scraped',
         'is_analyzed',
         'has_embedding',
+        'is_verified',
+        'verified_by',
         'scraped_at',
         'analyzed_at',
+        'verified_at',
     ];
 
     protected $casts = [
@@ -28,8 +31,10 @@ class Article extends Model
         'is_scraped' => 'boolean',
         'is_analyzed' => 'boolean',
         'has_embedding' => 'boolean',
+        'is_verified' => 'boolean',
         'scraped_at' => 'datetime',
         'analyzed_at' => 'datetime',
+        'verified_at' => 'datetime',
     ];
 
     public function categories(): BelongsToMany
@@ -45,5 +50,10 @@ class Article extends Model
     public function cases(): HasMany
     {
         return $this->hasMany(EnvironmentalCase::class);
+    }
+
+    public function verifiedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 }

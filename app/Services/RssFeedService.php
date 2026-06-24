@@ -10,6 +10,27 @@ use SimpleXMLElement;
 
 class RssFeedService
 {
+    /**
+     * Environmental keywords to filter relevant articles from general news sources.
+     */
+    protected array $environmentalKeywords = [
+        'perusakan lingkungan', 'kerusakan alam', 'deforestasi', 'pencemaran', 'polusi', 'limbah beracun',
+        'tambang ilegal', 'galian c', 'illegal logging', 'pembalakan liar', 'kebakaran hutan', 'karhutla',
+        'bencana ekologis', 'sampah plastik', 'limbah industri', 'reklamasi pesisir', 'pemutihan karang',
+        'perburuan satwa', 'perdagangan satwa', 'satwa dilindungi', 'krisis iklim', 'pemanasan global',
+        'emisi karbon', 'konflik agraria', 'perampasan tanah', 'izin lingkungan', 'amdal',
+        'walhi', 'greenpeace', 'jatam', 'pembakaran lahan', 'alih fungsi lahan', 'degradasi hutan',
+    ];
+
+    /**
+     * Sources that are specifically about environment — no keyword filtering needed.
+     */
+    protected array $environmentalSources = [
+        'Mongabay Indonesia', 'Greenpeace Indonesia', 'WALHI',
+        'Forest Watch Indonesia', 'Betahita', 'JATAM (Jaringan Advokasi Tambang)',
+        'Auriga Nusantara', 'Jurno.id', 'Project Multatuli',
+    ];
+
     protected array $feeds = [
         [
             'url' => 'https://www.mongabay.co.id/feed/',
@@ -73,17 +94,51 @@ class RssFeedService
     {
         $allArticles = [];
 
-        foreach ($this->feeds as $feed) {
+        foreach ($this->feeds as $i => $feed) {
             try {
                 $articles = $this->fetchFeed($feed['url'], $feed['source']);
+
+                // Filter general news sources for environmental relevance
+                if (!in_array($feed['source'], $this->environmentalSources)) {
+                    $before = count($articles);
+                    $articles = array_filter($articles, fn($a) => $this->isEnvironmentalArticle($a));
+                    $articles = array_values($articles);
+                    Log::info("Filtered {$feed['source']}: {$before} → " . count($articles) . " environmental articles");
+                }
+
                 $allArticles = array_merge($allArticles, $articles);
                 Log::info("Fetched " . count($articles) . " articles from {$feed['source']}");
             } catch (\Exception $e) {
                 Log::error("Failed to fetch RSS from {$feed['source']}: {$e->getMessage()}");
             }
+
+            // Rate limiting: sleep 500ms between feed requests to be respectful
+            if ($i < count($this->feeds) - 1) {
+                usleep(500_000);
+            }
         }
 
         return $allArticles;
+    }
+
+    /**
+     * Check if an article is likely about environmental issues.
+     */
+    protected function isEnvironmentalArticle(array $article): bool
+    {
+        $text = strtolower(
+            ($article['title'] ?? '') . ' ' .
+            ($article['description'] ?? '') . ' ' .
+            ($article['content'] ?? '')
+        );
+
+        foreach ($this->environmentalKeywords as $keyword) {
+            if (str_contains($text, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function fetchFeed(string $url, string $source): array

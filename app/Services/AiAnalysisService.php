@@ -79,13 +79,14 @@ Berikan analisis dalam format JSON dengan struktur berikut:
     "locations": [
         {
             "name": "nama lokasi spesifik",
-            "regency": "nama kabupaten/kota (jika ada)",
-            "province": "nama provinsi (jika ada)"
+            "regency": "nama kabupaten/kota lengkap (contoh: Kabupaten Kutai Kartanegara, Kota Surabaya)",
+            "province": "nama provinsi lengkap (contoh: Kalimantan Timur, Jawa Timur)"
         }
     ],
     "cause": "penyebab utama kerusakan lingkungan",
     "impact": "dampak yang ditimbulkan",
-    "severity": 0-100
+    "severity": 0-100,
+    "confidence": 0-100
 }
 
 Kategori yang tersedia: {$categories}
@@ -93,8 +94,14 @@ Kategori yang tersedia: {$categories}
 PENTING:
 - Pilih kategori yang sesuai dari daftar di atas (bisa lebih dari 1)
 - Identifikasi lokasi spesifik yang disebutkan (kabupaten/kota, provinsi)
-- Berikan skor severity 0-100 berdasarkan tingkat keparahan
-- Jika tidak ada informasi tentang lingkungan, set severity = 0
+- Untuk regency, SELALU gunakan format lengkap: "Kabupaten ..." atau "Kota ..."
+- Untuk province, gunakan nama resmi lengkap provinsi
+- Berikan skor severity 0-100 berdasarkan tingkat keparahan kerusakan
+- Berikan skor confidence 0-100 yang menunjukkan seberapa yakin Anda bahwa klasifikasi kategori, lokasi, dan severity sudah akurat berdasarkan isi berita
+- Jika artikel menyebutkan lokasi secara eksplisit, confidence tinggi (70-100)
+- Jika lokasi harus diperkirakan dari konteks, confidence sedang (40-69)
+- Jika lokasi tidak jelas, confidence rendah (0-39)
+- Jika tidak ada informasi tentang lingkungan, set severity = 0 dan confidence = 0
 - Jawab HANYA dalam format JSON, tanpa teks tambahan
 PROMPT;
     }
@@ -161,6 +168,7 @@ PROMPT;
             'cause' => $parsed['cause'] ?? null,
             'impact' => $parsed['impact'] ?? null,
             'severity' => min(100, max(0, (int) ($parsed['severity'] ?? 0))),
+            'confidence' => min(100, max(0, (int) ($parsed['confidence'] ?? 0))),
         ];
     }
 
@@ -192,6 +200,7 @@ PROMPT;
                 'cause' => $result['cause'],
                 'impact' => $result['impact'],
                 'severity' => $result['severity'],
+                'confidence' => $result['confidence'] ?? 0,
             ]);
         }
     }
