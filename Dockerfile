@@ -30,7 +30,7 @@ RUN composer install --no-interaction --optimize-autoloader
 # Install Node dependencies
 RUN npm install
 
-# Expose ports for Laravel serve and Vite dev server
-EXPOSE 8000 5173
+# Expose only the Laravel app port
+EXPOSE 8000
 
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]

@@ -54,7 +54,12 @@ async function sendMessage() {
             body: JSON.stringify({ question: currentQuestion }),
         });
         const data = await response.json();
-        messages.value.push({ role: 'assistant', content: data.answer, thought: data.thought, sources: data.sources });
+        messages.value.push({
+            role: 'assistant',
+            content: data.answer || 'Maaf, saya tidak dapat memproses jawaban saat ini.',
+            thought: data.thought || null,
+            sources: data.sources || [],
+        });
     } catch (e) {
         messages.value.push({ role: 'assistant', content: 'Maaf, terjadi kesalahan. Silakan coba lagi.' });
     } finally {
@@ -69,6 +74,7 @@ function useExample(q) {
 }
 
 function renderMarkdown(text) {
+    if (!text) return '';
     return marked(text);
 }
 
