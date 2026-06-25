@@ -1,0 +1,122 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: nalabumi-app:production
+    container_name: nalabumi-app
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - storage-data:/app/storage:z
+    env_file:
+      - env.prod
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+    networks:
+      - nalabumi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: nalabumi-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+      MARIADB_DATABASE: nalabumi
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./nalabumi-2026_06_22_10_58_56-dump.sql:/docker-entrypoint-initdb.d/dump.sql:z
+    expose:
+      - "3306"
+    networks:
+      - nalabumi-network
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  valkey:
+    image: valkey/valkey:8.1
+    container_name: nalabumi-valkey
+    restart: unless-stopped
+    volumes:
+      - valkey-data:/data
+    expose:
+      - "6379"
+    networks:
+      - nalabumi-network
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: nalabumi-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    expose:
+      - "6333"
+    networks:
+      - nalabumi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nalabumi-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    expose:
+      - "11434"
+    networks:
+      - nalabumi-network
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama serve & sleep 2 && ollama pull bge-m3 && wait"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+networks:
+  nalabumi-network:
+    driver: bridge
+
+volumes:
+  mariadb-data:
+    driver: local
+  qdrant-storage:
+    driver: local
+  ollama-data:
+    driver: local
+  valkey-data:
+    driver: local
+  storage-data:
+    driver: local

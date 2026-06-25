@@ -1,0 +1,147 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nalabumi-app
+    container_name: nalabumi-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app:z
+      - ./env.docker:/app/.env:z
+      - /app/node_modules
+      - /app/vendor
+    environment:
+      - DB_HOST=mariadb
+      - DB_CONNECTION=mariadb
+      - DB_DATABASE=nalabumi
+      - DB_USERNAME=root
+      - DB_PASSWORD=
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mariadb
+    networks:
+      - nalabumi-network
+    command: sh -c "until mariadb-admin ping -h mariadb -u root --silent --skip-ssl 2>/dev/null; do echo 'Waiting for DB...'; sleep 2; done && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+
+  vite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nalabumi-app
+    container_name: nalabumi-vite
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app:z
+      - ./env.docker:/app/.env:z
+      - /app/node_modules
+      - /app/vendor
+    depends_on:
+      - app
+    networks:
+      - nalabumi-network
+    command: npm run dev
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nalabumi-app
+    container_name: nalabumi-queue
+    restart: unless-stopped
+    volumes:
+      - .:/app:z
+      - ./env.docker:/app/.env:z
+      - /app/node_modules
+      - /app/vendor
+    environment:
+      - DB_HOST=mariadb
+      - DB_CONNECTION=mariadb
+      - DB_DATABASE=nalabumi
+      - DB_USERNAME=root
+      - DB_PASSWORD=
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mariadb
+    networks:
+      - nalabumi-network
+    command: sh -c "until mariadb-admin ping -h mariadb -u root --silent --skip-ssl 2>/dev/null; do echo 'Waiting for DB...'; sleep 2; done && php artisan migrate --force && php artisan queue:listen --tries=1 --timeout=0"
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: nalabumi-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+      MARIADB_DATABASE: nalabumi
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./nalabumi-2026_06_22_10_58_56-dump.sql:/docker-entrypoint-initdb.d/dump.sql:z
+    expose:
+      - "3306"
+    networks:
+      - nalabumi-network
+
+  valkey:
+    image: valkey/valkey:8.1
+    container_name: nalabumi-valkey
+    restart: unless-stopped
+    volumes:
+      - valkey-data:/data
+    expose:
+      - "6379"
+    networks:
+      - nalabumi-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: nalabumi-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    expose:
+      - "6333"
+    networks:
+      - nalabumi-network
+
+  scheduler:
+    image: nalabumi-app
+    container_name: nalabumi-scheduler
+    restart: unless-stopped
+    volumes:
+      - .:/app:z
+      - ./env.docker:/app/.env:z
+      - /app/node_modules
+      - /app/vendor
+    environment:
+      - DB_HOST=mariadb
+      - DB_CONNECTION=mariadb
+      - DB_DATABASE=nalabumi
+      - DB_USERNAME=root
+      - DB_PASSWORD=
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - mariadb
+      - qdrant
+    networks:
+      - nalabumi-network
+    command: sh -c "until mariadb-admin ping -h mariadb -u root --silent --skip-ssl 2>/dev/null; do echo 'Waiting for DB...'; sleep 2; done && php artisan migrate --force && while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
+
+networks:
+  nalabumi-network:
+    driver: bridge
+
+volumes:
+  mariadb-data:
+    driver: local
+  qdrant-data:
+    driver: local
+  valkey-data:
+    driver: local

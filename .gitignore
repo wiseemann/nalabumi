@@ -1,0 +1,26 @@
+/node_modules
+/vendor
+/.env
+env.docker
+env.prod
+/.env.backup
+/.phpunit.cache
+/phpunit.xml
+Homestead.json
+Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+/.idea
+/.vscode
+.DS_Store
+Thumbs.db
+/public/hot
+/public/storage
+/storage/*.key
+/reference
+
+# Database files & dumps
+# *.sql
+# /database/database.sqlite
+# /.phpunit.result.cache
