@@ -105,7 +105,7 @@ const challenges = ref([
                     <div class="flex flex-wrap gap-4 items-center mb-10">
                         <Link href="/dashboard" class="px-8 py-4 bg-primary text-on-primary font-bold text-sm rounded-xl hover:bg-primary-container shadow-lg hover:shadow-primary/25 transition-all duration-300 transform hover:-translate-y-0.5 flex items-center gap-2">
                             <span class="material-symbols-outlined text-[20px] filled">public</span>
-                            Eksplor Peta Peta Peta
+                            Eksplor Peta
                         </Link>
                         <Link href="/chat" class="px-8 py-4 bg-surface border border-outline-variant/60 text-on-surface font-semibold text-sm rounded-xl hover:bg-surface-container transition-all duration-300 flex items-center gap-2">
                             <span class="material-symbols-outlined text-[20px]">chat</span>

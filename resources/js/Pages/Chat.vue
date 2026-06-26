@@ -4,7 +4,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { marked } from 'marked';
 import { Link } from '@inertiajs/vue3';
 
-marked.setOptions({
+marked.use({
     breaks: true,
     gfm: true,
 });
@@ -75,7 +75,7 @@ function useExample(q) {
 
 function renderMarkdown(text) {
     if (!text) return '';
-    return marked(text);
+    return marked.parse(text);
 }
 
 function autoResize(e) {

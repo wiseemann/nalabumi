@@ -2,7 +2,7 @@
 import { ref, nextTick, onMounted, watch } from 'vue';
 import { marked } from 'marked';
 
-marked.setOptions({
+marked.use({
     breaks: true,
     gfm: true,
 });
@@ -71,7 +71,7 @@ async function sendMessage() {
 }
 
 function renderMarkdown(text) {
-    return marked(text);
+    return marked.parse(text);
 }
 
 const showClearConfirm = ref(false);
