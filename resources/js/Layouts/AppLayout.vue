@@ -17,8 +17,8 @@ const shouldShowFloatingChat = computed(() => {
 
 <template>
     <Head :title="title" />
-    <div class="min-h-screen flex flex-col">
-        <nav class="fixed top-0 w-full z-50 flex justify-between items-center px-10 md:px-10 h-16 bg-surface border-b border-outline-variant shadow-sm">
+    <div class="flex flex-col" style="height: 100dvh; overflow: hidden;">
+        <nav class="flex-shrink-0 w-full z-50 flex justify-between items-center px-4 md:px-10 h-16 bg-surface border-b border-outline-variant shadow-sm">
             <div class="flex items-center gap-8">
                 <Link href="/" class="flex items-center">
                     <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-10 w-auto object-contain" />
@@ -44,7 +44,7 @@ const shouldShowFloatingChat = computed(() => {
             </div>
             <div></div>
         </nav>
-        <main class="flex-1 pt-16">
+        <main class="flex-1 min-h-0 overflow-hidden">
             <slot />
         </main>
         

@@ -319,7 +319,7 @@ watch([selectedCategory, selectedDateRange], () => {
 
 <template>
     <AppLayout title="Dashboard - Peta Lingkungan">
-        <div class="h-[calc(100dvh-4rem)] relative bg-[#F7F8F3] overflow-hidden">
+        <div class="h-full w-full relative bg-[#F7F8F3] overflow-hidden">
             <!-- Map Container -->
             <div ref="mapContainer" class="absolute inset-0 w-full h-full" style="z-index: 1;"></div>
 
