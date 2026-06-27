@@ -93,13 +93,24 @@ function normalizeRegencyName(name) {
         .toLowerCase();
 }
 
+// Pre-compute lookup table to prevent O(N^2) regex operations during map render
+const scoreLookup = new Map();
+watch(() => props.urgencyScores, (newScores) => {
+    scoreLookup.clear();
+    if (!newScores) return;
+    newScores.forEach(s => {
+        if (s.location?.regency_name) {
+            scoreLookup.set(normalizeRegencyName(s.location.regency_name), s);
+        }
+        if (s.location?.name) {
+            scoreLookup.set(normalizeRegencyName(s.location.name), s);
+        }
+    });
+}, { immediate: true, deep: true });
+
 function getRegencyStatus(regencyName) {
     const normalizedName = normalizeRegencyName(regencyName);
-    const scoreData = props.urgencyScores.find(s => {
-        const locRegency = normalizeRegencyName(s.location?.regency_name);
-        const locName = normalizeRegencyName(s.location?.name);
-        return locRegency === normalizedName || locName === normalizedName;
-    });
+    const scoreData = scoreLookup.get(normalizedName);
     if (scoreData) {
         return {
             level: scoreData.level,
@@ -109,6 +120,28 @@ function getRegencyStatus(regencyName) {
     }
     return { level: 'Rendah', score: 0, caseCount: 0 };
 }
+
+// Compute real stats for the HUD
+const totalCases = computed(() => {
+    if (!props.urgencyScores) return 0;
+    return props.urgencyScores.reduce((sum, s) => sum + (s.case_count || 0), 0);
+});
+
+const criticalRegions = computed(() => {
+    if (!props.urgencyScores) return 0;
+    return props.urgencyScores.filter(s => s.level === 'Kritis').length;
+});
+
+const lastUpdate = computed(() => {
+    if (!props.urgencyScores || props.urgencyScores.length === 0) return 'Belum ada data';
+    const dates = props.urgencyScores.map(s => {
+        // Fallback to Date.now() if no valid date found
+        const d = s.date || s.created_at;
+        return d ? new Date(d).getTime() : Date.now();
+    });
+    const maxDate = new Date(Math.max(...dates));
+    return maxDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+});
 
 function getStatusConfig(level) {
     const normalizedLevel = level ? level.charAt(0).toUpperCase() + level.slice(1).toLowerCase() : 'Rendah';
@@ -180,6 +213,7 @@ function initMap() {
     const initialZoom = 5;
 
     map.value = L.map(mapContainer.value, {
+        preferCanvas: true, // Crucial for performance with 514+ complex polygons
         zoomControl: false,
         attributionControl: true,
         minZoom: 4,
@@ -397,19 +431,19 @@ watch([selectedCategory, selectedDateRange], () => {
                                 </div>
                             </div>
 
-                            <!-- Real-time telemetri footer -->
-                            <div class="bg-slate-100/40 rounded-xl p-3 border border-outline-variant/40 flex items-center justify-between text-xs text-slate-700">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="material-symbols-outlined text-slate-500 text-sm">wifi</span>
-                                    <span>Signal: <strong>Stable</strong></span>
+                            <!-- Real statistics footer -->
+                            <div class="bg-slate-100/40 rounded-xl p-3 border border-outline-variant/40 flex flex-wrap gap-y-2 items-center justify-between text-xs text-slate-700">
+                                <div class="flex items-center gap-1.5" title="Total akumulasi kasus lingkungan terdeteksi">
+                                    <span class="material-symbols-outlined text-slate-500 text-sm">warning</span>
+                                    <span>Total: <strong>{{ totalCases }} Kasus</strong></span>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="material-symbols-outlined text-slate-500 text-sm">analytics</span>
-                                    <span>Data: <strong>Real-time</strong></span>
+                                <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus kritis">
+                                    <span class="material-symbols-outlined text-error/80 text-sm">emergency</span>
+                                    <span>Kritis: <strong>{{ criticalRegions }} Wilayah</strong></span>
                                 </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="material-symbols-outlined text-slate-500 text-sm">database</span>
-                                    <span>Sync: <strong>100%</strong></span>
+                                <div class="flex items-center gap-1.5" title="Pembaruan data terbaru oleh AI">
+                                    <span class="material-symbols-outlined text-slate-500 text-sm">update</span>
+                                    <span>Update: <strong>{{ lastUpdate }}</strong></span>
                                 </div>
                             </div>
                         </div>
@@ -443,13 +477,16 @@ watch([selectedCategory, selectedDateRange], () => {
                             </div>
 
                             <div class="grid grid-cols-2 gap-3">
-                                <div class="bg-slate-100/60 border border-outline-variant/40 rounded-xl p-3.5 text-center">
+                                <div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-4 text-center hover:shadow-sm transition-shadow">
                                     <span class="block text-2xl font-black text-slate-800">{{ selectedRegion.caseCount }}</span>
-                                    <span class="text-[10px] text-slate-500 uppercase font-semibold block mt-1">Total Kasus</span>
+                                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mt-1">Total Kasus</span>
                                 </div>
-                                <div class="bg-slate-100/60 border border-outline-variant/40 rounded-xl p-3.5 text-center">
-                                    <span class="block text-2xl font-black text-slate-800">{{ selectedRegion.score }}/100</span>
-                                    <span class="text-[10px] text-slate-500 uppercase font-semibold block mt-1">Skor Kerawanan</span>
+                                <div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-4 text-center hover:shadow-sm transition-shadow">
+                                    <div class="flex items-baseline justify-center">
+                                        <span class="text-2xl font-black" :style="{ color: selectedRegion.textColor }">{{ selectedRegion.score }}</span>
+                                        <span class="text-xs font-bold text-slate-400">/100</span>
+                                    </div>
+                                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mt-1">Skor Kerawanan</span>
                                 </div>
                             </div>
 

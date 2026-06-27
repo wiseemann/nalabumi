@@ -134,6 +134,19 @@ services:
       - nalabumi-network
     command: sh -c "php artisan migrate --force && while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nalabumi-ollama
+    restart: unless-stopped
+    profiles:
+      - with-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - nalabumi-network
+
 networks:
   nalabumi-network:
     driver: bridge
@@ -144,4 +157,6 @@ volumes:
   qdrant-data:
     driver: local
   valkey-data:
+    driver: local
+  ollama-data:
     driver: local

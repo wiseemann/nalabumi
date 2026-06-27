@@ -148,4 +148,18 @@ class AdminController extends Controller
 
         return back()->with('success', "Artikel berhasil ditambahkan dan akan dianalisis.");
     }
+
+    /**
+     * Dispatch AnalyzeArticleJob for all scraped but unanalyzed articles.
+     */
+    public function syncUnanalyzed()
+    {
+        $articles = Article::where('is_scraped', true)->where('is_analyzed', false)->get();
+        
+        foreach ($articles as $article) {
+            AnalyzeArticleJob::dispatch($article);
+        }
+
+        return back()->with('success', "{$articles->count()} artikel telah dimasukkan ke antrean analisis ulang.");
+    }
 }

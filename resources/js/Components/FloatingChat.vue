@@ -13,7 +13,7 @@ const question = ref('');
 const isLoading = ref(false);
 const chatContainer = ref(null);
 
-const STORAGE_KEY = 'nalabumi_floating_chat_history';
+const STORAGE_KEY = 'nalabumi_chat_history';
 
 onMounted(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -105,7 +105,7 @@ function cancelClearChat() {
 
         <!-- Chat Window -->
         <Transition name="slide-up">
-            <div v-if="isOpen" class="absolute bottom-20 right-0 w-[350px] sm:w-[400px] h-[550px] max-h-[80vh] bg-surface-container-low border border-outline-variant/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div v-if="isOpen" class="absolute bottom-20 right-0 w-[calc(100vw-3rem)] sm:w-[400px] h-[450px] sm:h-[550px] max-h-[80vh] bg-surface-container-low border border-outline-variant/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                 
                 <!-- Header -->
                 <div class="bg-primary text-on-primary px-4 py-3 flex items-center justify-between">
@@ -168,10 +168,9 @@ function cancelClearChat() {
 
                         <!-- Loading -->
                         <div v-if="isLoading" class="max-w-[85%]">
-                            <div class="bg-surface-container-lowest border border-outline-variant/60 rounded-xl rounded-bl-sm px-4 py-3 shadow-sm flex items-center gap-1.5 h-10 w-fit">
-                                <div class="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0s;"></div>
-                                <div class="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0.15s;"></div>
-                                <div class="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0.3s;"></div>
+                            <div class="bg-surface-container border border-outline-variant/60 rounded-xl rounded-bl-sm px-4 py-2.5 shadow-sm flex items-center gap-2 h-10 w-fit">
+                                <span class="material-symbols-outlined text-primary text-[16px] animate-spin">progress_activity</span>
+                                <span class="text-xs text-on-surface-variant font-medium">Sedang berpikir...</span>
                             </div>
                         </div>
                     </div>

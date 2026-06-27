@@ -307,9 +307,18 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                             >
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.date }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.category }}</td>
-                                <td class="px-6 py-4 text-sm text-on-surface flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
-                                    {{ c.source }}
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center gap-2 text-sm text-on-surface">
+                                        <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
+                                        <span class="truncate max-w-[150px]">{{ c.source }}</span>
+                                        <span v-if="c.confidence" class="group flex items-center text-[10px] font-semibold text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded ml-1 whitespace-nowrap cursor-help transition-colors hover:bg-primary/20" title="Tingkat Kepercayaan AI">
+                                            <span class="material-symbols-outlined text-[12px] mr-1">psychology</span>
+                                            <span class="max-w-0 overflow-hidden group-hover:max-w-[130px] transition-all duration-300 ease-in-out whitespace-nowrap opacity-0 group-hover:opacity-100">
+                                                Tingkat Kepercayaan:&nbsp;
+                                            </span>
+                                            <span>{{ c.confidence }}%</span>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-on-surface font-medium truncate max-w-[240px]">
                                     <a v-if="c.url" :href="c.url" target="_blank" class="hover:text-primary hover:underline" @click.stop>

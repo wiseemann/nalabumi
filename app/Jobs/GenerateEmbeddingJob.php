@@ -51,5 +51,7 @@ class GenerateEmbeddingJob implements ShouldQueue
             $embedding,
             $payload
         );
+
+        CalculateReliabilityJob::dispatch($this->article);
     }
 }

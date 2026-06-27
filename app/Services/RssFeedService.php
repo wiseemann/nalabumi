@@ -88,6 +88,35 @@ class RssFeedService
             'url' => 'https://auriga.or.id/feed/',
             'source' => 'Auriga Nusantara',
         ],
+        // Additional General News
+        [
+            'url' => 'https://www.kompas.com/getrss/nasional',
+            'source' => 'Kompas',
+        ],
+        [
+            'url' => 'http://rss.tempo.co/nasional',
+            'source' => 'Tempo',
+        ],
+        [
+            'url' => 'https://news.detik.com/berita/rss',
+            'source' => 'Detik',
+        ],
+        [
+            'url' => 'https://www.republika.co.id/rss/nasional/',
+            'source' => 'Republika',
+        ],
+        [
+            'url' => 'https://feed.liputan6.com/rss/news',
+            'source' => 'Liputan6',
+        ],
+        [
+            'url' => 'https://tirto.id/sitemap/r/google-discover',
+            'source' => 'Tirto',
+        ],
+        [
+            'url' => 'https://lapi.kumparan.com/v2.0/rss/',
+            'source' => 'Kumparan',
+        ],
     ];
 
     public function fetchAll(): array

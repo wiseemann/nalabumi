@@ -42,9 +42,24 @@ class AiAnalysisService
 
             $this->storeAnalysis($article, $result);
 
+            // Auto-verification logic
+            $is_verified = null; // null means pending
+            $verified_at = null;
+            
+            if ($result['confidence'] >= 70) {
+                if ($result['severity'] > 0) {
+                    $is_verified = true; // High confidence environmental case -> Accept
+                } else {
+                    $is_verified = false; // High confidence NOT an environmental case -> Reject
+                }
+                $verified_at = now();
+            }
+
             $article->update([
                 'is_analyzed' => true,
                 'analyzed_at' => now(),
+                'is_verified' => $is_verified,
+                'verified_at' => $verified_at,
             ]);
 
             Log::info("Successfully analyzed article {$article->id}");
@@ -52,6 +67,13 @@ class AiAnalysisService
 
         } catch (\Exception $e) {
             Log::error("AI analysis failed for article {$article->id}: {$e->getMessage()}");
+            // Mark as analyzed but rejected so it doesn't get stuck forever
+            $article->update([
+                'is_analyzed' => true,
+                'analyzed_at' => now(),
+                'is_verified' => false,
+                'verified_at' => now(),
+            ]);
             return null;
         }
     }
@@ -147,13 +169,10 @@ PROMPT;
     protected function parseAiResponse(string $response): ?array
     {
         $response = trim($response);
-
-        if (str_starts_with($response, '```json')) {
-            $response = preg_replace('/^```json\s*/', '', $response);
-            $response = preg_replace('/\s*```$/', '', $response);
-        } elseif (str_starts_with($response, '```')) {
-            $response = preg_replace('/^```\s*/', '', $response);
-            $response = preg_replace('/\s*```$/', '', $response);
+        
+        // Extract JSON block using regex if there's surrounding text
+        if (preg_match('/\{.*\}/s', $response, $matches)) {
+            $response = $matches[0];
         }
 
         $parsed = json_decode($response, true);
@@ -179,8 +198,10 @@ PROMPT;
                 ['name' => $categoryName],
                 ['slug' => str($categoryName)->slug()]
             );
-            $article->categories()->attach($category->id);
+            $article->categories()->syncWithoutDetaching([$category->id]);
         }
+
+        $categoryId = $article->categories()->first()?->id;
 
         foreach ($result['locations'] as $locationData) {
             $location = Location::updateOrCreate(
@@ -191,17 +212,19 @@ PROMPT;
                 ],
                 []
             );
-            $article->locations()->attach($location->id);
+            $article->locations()->syncWithoutDetaching([$location->id]);
 
-            EnvironmentalCase::create([
-                'article_id' => $article->id,
-                'location_id' => $location->id,
-                'category_id' => $article->categories()->first()?->id,
-                'cause' => $result['cause'],
-                'impact' => $result['impact'],
-                'severity' => $result['severity'],
-                'confidence' => $result['confidence'] ?? 0,
-            ]);
+            if ($categoryId) {
+                EnvironmentalCase::create([
+                    'article_id' => $article->id,
+                    'location_id' => $location->id,
+                    'category_id' => $categoryId,
+                    'cause' => $result['cause'],
+                    'impact' => $result['impact'],
+                    'severity' => $result['severity'],
+                    'confidence' => $result['confidence'] ?? 0,
+                ]);
+            }
         }
     }
 }

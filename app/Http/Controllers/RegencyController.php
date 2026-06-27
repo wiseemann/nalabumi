@@ -97,6 +97,7 @@ class RegencyController extends Controller
                 'url' => $case->article?->url ?? null,
                 'category' => $case->category?->name ?? '—',
                 'severity' => $case->severity ?? 0,
+                'confidence' => $case->confidence ?? 0,
                 'cause' => $case->cause ?? null,
                 'impact' => $case->impact ?? null,
                 'location_name' => $location->regency_name ?? $location->name,

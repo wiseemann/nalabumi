@@ -209,10 +209,9 @@ function cancelClearChat() {
                             <div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center shrink-0 shadow-sm border border-primary-fixed-dim overflow-hidden p-2">
                                 <img :src="'/favicon.svg'" alt="Nalabumi AI" class="w-full h-full object-contain animate-pulse" />
                             </div>
-                            <div class="bg-surface-container-lowest border border-outline-variant/60 rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm flex items-center gap-1.5 h-[52px]">
-                                <div class="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0s;"></div>
-                                <div class="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0.15s;"></div>
-                                <div class="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style="animation-delay: 0.3s;"></div>
+                            <div class="bg-surface-container border border-outline-variant/60 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex items-center gap-2 h-[50px]">
+                                <span class="material-symbols-outlined text-primary animate-spin">progress_activity</span>
+                                <span class="text-sm text-on-surface-variant font-medium">Sedang menganalisis & mencari data...</span>
                             </div>
                         </div>
                     </template>
