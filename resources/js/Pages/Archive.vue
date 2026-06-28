@@ -175,19 +175,12 @@ function formatDate(dateStr) {
                         <tbody class="divide-y divide-outline-variant">
                             <tr v-for="article in articles.data" :key="article.id" class="odd:bg-surface-container-lowest even:bg-surface-bright hover:bg-surface-container cursor-pointer transition-colors" @click="openDrawer(article)">
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ formatDate(article.published_at) }}</td>
-                                <td class="px-6 py-4 text-sm text-on-surface font-medium">{{ article.locations.map(l => l.regency_name || l.name).join(', ') }}</td>
+                                <td class="px-6 py-4 text-sm text-on-surface font-medium max-w-[200px] truncate" :title="article.locations.map(l => l.regency_name || l.name).join(', ')">{{ article.locations.map(l => l.regency_name || l.name).join(', ') }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ article.categories.map(c => c.name).join(', ') }}</td>
                                 <td class="px-6 py-4">
                                     <div class="flex items-center gap-2 text-sm text-on-surface">
                                         <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
                                         <span class="truncate max-w-[150px]">{{ article.source }}</span>
-                                        <span v-if="article.cases?.length" class="group flex items-center text-[10px] font-semibold text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded ml-1 whitespace-nowrap cursor-help transition-colors hover:bg-primary/20" title="Tingkat Kepercayaan AI">
-                                            <span class="material-symbols-outlined text-[12px] mr-1">psychology</span>
-                                            <span class="max-w-0 overflow-hidden group-hover:max-w-[130px] transition-all duration-300 ease-in-out whitespace-nowrap opacity-0 group-hover:opacity-100">
-                                                Tingkat Kepercayaan:&nbsp;
-                                            </span>
-                                            <span>{{ article.cases[0].confidence }}%</span>
-                                        </span>
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-on-surface font-medium max-w-[200px] truncate" :title="article.title">{{ article.title }}</td>
@@ -199,9 +192,9 @@ function formatDate(dateStr) {
                                     <span v-else class="text-on-surface-variant text-xs">—</span>
                                 </td>
                                 <td class="px-6 py-4">
-                                    <span v-if="article.reliability_level" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" :class="getReliabilityBadge(article.reliability_color)" :title="`Skor: ${article.reliability_score}`">
-                                        <span class="w-1.5 h-1.5 rounded-full mr-1.5" :style="{ background: getReliabilityDot(article.reliability_color) }"></span>
-                                        {{ article.reliability_level }}
+                                    <span v-if="article.cases?.length" class="inline-flex items-center text-sm font-semibold text-primary" title="Tingkat Keyakinan AI">
+                                        <span class="material-symbols-outlined text-[16px] mr-1">psychology</span>
+                                        {{ article.cases[0].confidence }}%
                                     </span>
                                     <span v-else class="text-on-surface-variant text-xs">—</span>
                                 </td>
