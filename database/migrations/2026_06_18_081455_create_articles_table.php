@@ -10,8 +10,8 @@ return new class extends Migration
     {
         Schema::create('articles', function (Blueprint $table) {
             $table->id();
-            $table->string('url')->unique();
-            $table->string('title');
+            $table->string('url', 2000)->unique();
+            $table->string('title', 500);
             $table->text('content')->nullable();
             $table->dateTime('published_at')->nullable();
             $table->string('source');

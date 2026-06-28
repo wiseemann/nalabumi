@@ -132,7 +132,7 @@ const overviewCategoryChartSeries = [{
                             <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Kategori</span>
                             <span class="material-symbols-outlined text-secondary bg-secondary-container/20 p-2 rounded-full">category</span>
                         </div>
-                        <span class="text-4xl font-bold text-on-surface">{{ casesByCategory.length }}</span>
+                        <span class="text-4xl font-bold text-on-surface">{{ casesByCategory?.length || 0 }}</span>
                         <div class="flex items-center gap-1 text-primary">
                             <span class="material-symbols-outlined text-sm">check_circle</span>
                             <span class="text-xs font-semibold">Jenis kerusakan</span>
@@ -143,7 +143,7 @@ const overviewCategoryChartSeries = [{
                 <!-- Charts dari Dashboard lama -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                     <div class="lg:col-span-2 bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-on-surface mb-4">Tren Kasus Harian</h3>
+                        <h3 class="text-lg font-semibold text-on-surface mb-4">Kasus Yang Teridentifikasi (per Hari)</h3>
                         <VueApexCharts type="area" height="280" :options="dailyTrendChartOptions" :series="dailyTrendChartSeries" />
                     </div>
                     <div class="bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">

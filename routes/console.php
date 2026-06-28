@@ -6,3 +6,11 @@ Schedule::command('nalabumi:fetch-news')->everyThirtyMinutes();
 // Diubah menjadi hourly (setiap jam) agar data di peta publik lebih cepat sinkron 
 // mengikuti ritme AI yang menarik berita setiap 30 menit.
 Schedule::command('nalabumi:recalculate-urgency')->hourly();
+
+// Solusi berkala untuk memastikan artikel yang sudah dianalisis tetapi gagal masuk ke Qdrant (embedding) diproses ulang.
+Schedule::call(function () {
+    $articles = \App\Models\Article::where('has_embedding', false)->where('is_analyzed', true)->get();
+    foreach ($articles as $article) {
+        \App\Jobs\GenerateEmbeddingJob::dispatch($article);
+    }
+})->everyTenMinutes();

@@ -127,11 +127,10 @@ class ArticleReliabilityService
             return 50;
         }
 
-        // Clean source domain (e.g. "https://www.kompas.com" to "kompas.com")
         $domain = strtolower(parse_url($source, PHP_URL_HOST) ?? $source);
         $domain = str_replace('www.', '', $domain);
 
-        $reputation = MediaReputation::where('name', 'LIKE', '%' . $domain . '%')->first();
+        $reputation = MediaReputation::where('name', $domain)->first();
         
         if ($reputation) {
             return $reputation->score;
@@ -147,7 +146,7 @@ class ArticleReliabilityService
 
         $similarContext = '';
         foreach ($similarArticles as $i => $sim) {
-            $simContent = substr($sim->content ?? '', 0, 1000);
+            $simContent = substr($sim->content ?? '', 0, 500);
             $similarContext .= "Artikel Pembanding " . ($i+1) . " (Sumber: {$sim->source}):\nJudul: {$sim->title}\nIsi: {$simContent}\n\n";
         }
 
@@ -207,9 +206,10 @@ PROMPT;
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'] ?? '';
                 
-                // Clean markdown JSON ticks
-                $content = preg_replace('/^```json\s*/', '', trim($content));
-                $content = preg_replace('/\s*```$/', '', $content);
+                // Extract JSON block using regex if there's surrounding text
+                if (preg_match('/\{.*\}/s', $content, $matches)) {
+                    $content = $matches[0];
+                }
                 
                 $parsed = json_decode($content, true);
                 

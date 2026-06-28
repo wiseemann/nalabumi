@@ -36,6 +36,7 @@ Route::middleware(['auth', \App\Http\Middleware\AdminMiddleware::class])->prefix
     Route::get('/', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/articles', [AdminController::class, 'store'])->name('admin.articles.store');
     Route::post('/articles/sync-unanalyzed', [AdminController::class, 'syncUnanalyzed'])->name('admin.articles.sync-unanalyzed');
+    Route::post('/articles/fetch-historical', [AdminController::class, 'fetchHistorical'])->name('admin.articles.fetch-historical');
     Route::patch('/articles/{id}/verify', [AdminController::class, 'verify'])->name('admin.articles.verify');
     Route::patch('/articles/{id}/reject', [AdminController::class, 'reject'])->name('admin.articles.reject');
     

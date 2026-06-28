@@ -151,6 +151,51 @@ class RssFeedService
     }
 
     /**
+     * Fetch historical news from Bing News RSS using specific keywords.
+     */
+    public function fetchHistoricalFromGoogle(int $days = 15): int
+    {
+        $keywords = [
+            'deforestasi', 'tambang ilegal', 'karhutla', 'pencemaran lingkungan',
+            'pembalakan liar', 'limbah beracun', 'sampah plastik', 'perburuan satwa',
+            'reklamasi pesisir', 'kebakaran hutan', 'krisis iklim',
+            'pencemaran sungai', 'limbah laut', 'kerusakan terumbu karang', 'penangkapan ikan ilegal',
+            'galian c', 'konflik agraria', 'perampasan tanah', 'alih fungsi lahan',
+            'bencana ekologis', 'kerusakan alam', 'penggundulan hutan', 'pencemaran udara',
+            'tumpahan minyak', 'pabrik mencemari limbah'
+        ];
+        $allArticles = [];
+
+        foreach ($keywords as $i => $keyword) {
+            try {
+                $query = urlencode($keyword);
+                $url = "https://www.bing.com/news/search?q={$query}&format=rss&mkt=id-id";
+
+                $articles = $this->fetchFeed($url, 'Bing News');
+                $articles = array_filter($articles, fn($a) => $this->isEnvironmentalArticle($a));
+                
+                $allArticles = array_merge($allArticles, $articles);
+                Log::info("Fetched " . count($articles) . " historical articles from Bing News for keyword: {$keyword}");
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch historical RSS for {$keyword}: {$e->getMessage()}");
+            }
+
+            if ($i < count($keywords) - 1) {
+                usleep(500_000); // 500ms delay
+            }
+        }
+
+        $stored = $this->storeArticles($allArticles);
+        
+        // Dispatch scrape jobs for the new articles
+        foreach ($stored as $article) {
+            \App\Jobs\ScrapeArticleJob::dispatch($article);
+        }
+        
+        return count($stored);
+    }
+
+    /**
      * Check if an article is likely about environmental issues.
      */
     protected function isEnvironmentalArticle(array $article): bool
@@ -277,6 +322,13 @@ class RssFeedService
 
         foreach ($articles as $articleData) {
             if (empty($articleData['url'])) {
+                continue;
+            }
+
+            // Check for duplicate title to prevent identical news with different URLs
+            $existingTitle = Article::where('title', $articleData['title'])->first();
+            if ($existingTitle && $existingTitle->url !== $articleData['url']) {
+                $skipped++;
                 continue;
             }
 

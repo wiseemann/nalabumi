@@ -100,10 +100,23 @@ watch(() => props.urgencyScores, (newScores) => {
     if (!newScores) return;
     newScores.forEach(s => {
         if (s.location?.regency_name) {
-            scoreLookup.set(normalizeRegencyName(s.location.regency_name), s);
-        }
-        if (s.location?.name) {
-            scoreLookup.set(normalizeRegencyName(s.location.name), s);
+            const rName = normalizeRegencyName(s.location.regency_name);
+            if (scoreLookup.has(rName)) {
+                const existing = scoreLookup.get(rName);
+                existing.case_count += (s.case_count || 0);
+                if (s.score > existing.score) {
+                    existing.score = s.score;
+                    existing.level = s.level;
+                }
+                scoreLookup.set(rName, existing);
+            } else {
+                scoreLookup.set(rName, { ...s });
+            }
+        } else if (s.location?.name) {
+            const rName = normalizeRegencyName(s.location.name);
+            if (!scoreLookup.has(rName)) {
+                scoreLookup.set(rName, { ...s });
+            }
         }
     });
 }, { immediate: true, deep: true });
@@ -128,19 +141,19 @@ const totalCases = computed(() => {
 });
 
 const criticalRegions = computed(() => {
-    if (!props.urgencyScores) return 0;
-    return props.urgencyScores.filter(s => s.level === 'Kritis').length;
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'kritis').length;
 });
 
-const lastUpdate = computed(() => {
-    if (!props.urgencyScores || props.urgencyScores.length === 0) return 'Belum ada data';
-    const dates = props.urgencyScores.map(s => {
-        // Fallback to Date.now() if no valid date found
-        const d = s.date || s.created_at;
-        return d ? new Date(d).getTime() : Date.now();
-    });
-    const maxDate = new Date(Math.max(...dates));
-    return maxDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+const highRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'tinggi').length;
+});
+
+const mediumRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'sedang').length;
+});
+
+const lowRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'rendah').length;
 });
 
 function getStatusConfig(level) {
@@ -218,6 +231,11 @@ function initMap() {
         attributionControl: true,
         minZoom: 4,
         maxZoom: 14,
+        maxBounds: [
+            [-13.0, 93.0], // South West
+            [8.0, 143.0]  // North East
+        ],
+        maxBoundsViscosity: 1.0,
     }).setView(initialCenter, initialZoom);
 
     L.control.zoom({ position: 'bottomright' }).addTo(map.value);
@@ -432,18 +450,28 @@ watch([selectedCategory, selectedDateRange], () => {
                             </div>
 
                             <!-- Real statistics footer -->
-                            <div class="bg-slate-100/40 rounded-xl p-3 border border-outline-variant/40 flex flex-wrap gap-y-2 items-center justify-between text-xs text-slate-700">
-                                <div class="flex items-center gap-1.5" title="Total akumulasi kasus lingkungan terdeteksi">
-                                    <span class="material-symbols-outlined text-slate-500 text-sm">warning</span>
-                                    <span>Total: <strong>{{ totalCases }} Kasus</strong></span>
+                            <div class="bg-slate-100/40 rounded-xl p-4 border border-outline-variant/40 flex flex-col sm:flex-row flex-wrap gap-4 items-start sm:items-center justify-between text-xs text-slate-700">
+                                <div class="flex items-center gap-2" title="Total akumulasi kasus lingkungan terdeteksi">
+                                    <span class="material-symbols-outlined text-slate-500 text-base">warning</span>
+                                    <span class="font-medium text-sm">Total: <strong class="text-slate-900">{{ totalCases }} Kasus</strong></span>
                                 </div>
-                                <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus kritis">
-                                    <span class="material-symbols-outlined text-error/80 text-sm">emergency</span>
-                                    <span>Kritis: <strong>{{ criticalRegions }} Wilayah</strong></span>
-                                </div>
-                                <div class="flex items-center gap-1.5" title="Pembaruan data terbaru oleh AI">
-                                    <span class="material-symbols-outlined text-slate-500 text-sm">update</span>
-                                    <span>Update: <strong>{{ lastUpdate }}</strong></span>
+                                <div class="flex flex-wrap gap-3 sm:gap-4 items-center">
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus kritis">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#ba1a1a;"></span>
+                                        <span class="font-medium">Kritis: <strong class="text-slate-900">{{ criticalRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus tinggi">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#FF9D23;"></span>
+                                        <span class="font-medium">Tinggi: <strong class="text-slate-900">{{ highRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus sedang">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#eac248;"></span>
+                                        <span class="font-medium">Sedang: <strong class="text-slate-900">{{ mediumRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus rendah">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#436526;"></span>
+                                        <span class="font-medium">Rendah: <strong class="text-slate-900">{{ lowRegions }} Kab/Kota</strong></span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

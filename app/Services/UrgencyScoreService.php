@@ -15,9 +15,15 @@ class UrgencyScoreService
         $locations = Location::has('cases')->withCount('cases')->get();
 
         foreach ($locations as $location) {
-            $score = $this->calculateLocationScore($location, $date);
-            $this->storeUrgencyScore($location, $score, $date);
+            $this->calculateForLocation($location, $date);
         }
+    }
+
+    public function calculateForLocation(Location $location, $date = null): void
+    {
+        $date = $date ?? now()->toDateString();
+        $score = $this->calculateLocationScore($location, $date);
+        $this->storeUrgencyScore($location, $score, $date);
     }
 
     protected function calculateLocationScore(Location $location, string $date): array

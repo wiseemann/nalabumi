@@ -12,6 +12,7 @@ use App\Models\Location;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use App\Services\RssFeedService;
 
 class AdminController extends Controller
 {
@@ -161,5 +162,16 @@ class AdminController extends Controller
         }
 
         return back()->with('success', "{$articles->count()} artikel telah dimasukkan ke antrean analisis ulang.");
+    }
+
+    /**
+     * Fetch historical articles from Google News RSS.
+     */
+    public function fetchHistorical(RssFeedService $rssFeedService)
+    {
+        $days = 15;
+        $count = $rssFeedService->fetchHistoricalFromGoogle($days);
+
+        return back()->with('success', "Berhasil menarik {$count} artikel historis dari {$days} hari terakhir. Artikel sedang diproses di latar belakang.");
     }
 }

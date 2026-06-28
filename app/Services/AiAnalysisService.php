@@ -20,6 +20,12 @@ class AiAnalysisService
         'Perburuan Satwa',
         'Kerusakan Pesisir',
         'Limbah Industri',
+        'Polusi Udara',
+        'Sampah Plastik',
+        'Konflik Agraria',
+        'Krisis Air',
+        'Kerusakan Terumbu Karang',
+        'Tambang Galian C',
     ];
 
     public function analyzeArticle(Article $article): ?array
@@ -120,10 +126,11 @@ PENTING:
 - Untuk province, gunakan nama resmi lengkap provinsi
 - Berikan skor severity 0-100 berdasarkan tingkat keparahan kerusakan
 - Berikan skor confidence 0-100 yang menunjukkan seberapa yakin Anda bahwa klasifikasi kategori, lokasi, dan severity sudah akurat berdasarkan isi berita
-- Jika artikel menyebutkan lokasi secara eksplisit, confidence tinggi (70-100)
+- Jika artikel menyebutkan lokasi secara eksplisit di dalam Indonesia, confidence tinggi (70-100)
 - Jika lokasi harus diperkirakan dari konteks, confidence sedang (40-69)
 - Jika lokasi tidak jelas, confidence rendah (0-39)
 - Jika tidak ada informasi tentang lingkungan, set severity = 0 dan confidence = 0
+- SANGAT PENTING: Jika kejadian atau lokasi utama berada di luar negeri (Bukan di negara Indonesia, contoh: India, Malaysia, dsb), JANGAN ekstrak lokasinya. Kosongkan array "locations", dan set severity = 0 serta confidence = 0.
 - Jawab HANYA dalam format JSON, tanpa teks tambahan
 PROMPT;
     }
@@ -193,6 +200,9 @@ PROMPT;
 
     protected function storeAnalysis(Article $article, array $result): void
     {
+        // Bersihkan kasus lama jika artikel dianalisis ulang agar tidak ganda
+        EnvironmentalCase::where('article_id', $article->id)->delete();
+
         foreach ($result['categories'] as $categoryName) {
             $category = Category::firstOrCreate(
                 ['name' => $categoryName],
@@ -224,6 +234,9 @@ PROMPT;
                     'severity' => $result['severity'],
                     'confidence' => $result['confidence'] ?? 0,
                 ]);
+
+                // Instantly update the UrgencyScore for this specific location so the Map is Real-time!
+                app(\App\Services\UrgencyScoreService::class)->calculateForLocation($location);
             }
         }
     }

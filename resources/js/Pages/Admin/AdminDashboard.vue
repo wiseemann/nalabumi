@@ -253,6 +253,13 @@ const filterTabs = [
                             />
                         </div>
                         <button
+                            @click="router.post(route('admin.articles.fetch-historical'), {}, { preserveScroll: true })"
+                            class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center gap-1.5"
+                        >
+                            <span class="material-symbols-outlined text-[14px]">history</span>
+                            Tarik 15 Hari
+                        </button>
+                        <button
                             @click="showAddModal = true"
                             class="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-semibold hover:bg-primary-container hover:text-on-primary-container transition-colors flex items-center gap-1.5"
                         >
