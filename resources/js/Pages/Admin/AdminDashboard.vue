@@ -7,6 +7,7 @@ const props = defineProps({
     stats: Object,
     categories: Array,
     filters: Object,
+    isBingLocked: Boolean,
 });
 
 const search = ref(props.filters?.search || '');
@@ -75,6 +76,14 @@ const executeSync = () => {
     router.post('/admin/articles/sync-unanalyzed', {}, {
         preserveScroll: true,
     });
+};
+
+const fetchHistorical = () => {
+    if (props.isBingLocked) return;
+    
+    if (confirm('PERINGATAN: Fitur ini akan memaksa server menembakkan 25 pencarian berat ke mesin Bing dan mendatangkan puluhan berita historis secara bersamaan. Jika Anda melakukannya terlalu sering, IP kita bisa saja diblokir oleh Bing.\n\nApakah Anda yakin ingin menggunakan fitur darurat ini sekarang?')) {
+        router.post(route('admin.articles.fetch-historical'), {}, { preserveScroll: true });
+    }
 };
 
 const severityLabel = (severity) => {
@@ -252,12 +261,13 @@ const filterTabs = [
                                 class="pl-9 pr-3 py-1.5 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary w-52"
                             />
                         </div>
-                        <button
-                            @click="router.post(route('admin.articles.fetch-historical'), {}, { preserveScroll: true })"
-                            class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center gap-1.5"
+                        <button 
+                            @click="fetchHistorical" 
+                            :disabled="isBingLocked"
+                            class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span class="material-symbols-outlined text-[14px]">history</span>
-                            Tarik 15 Hari
+                            {{ isBingLocked ? 'Cooldown 12 Jam' : 'Tarik 15 Hari' }}
                         </button>
                         <button
                             @click="showAddModal = true"

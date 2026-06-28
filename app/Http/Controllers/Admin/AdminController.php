@@ -67,7 +67,7 @@ class AdminController extends Controller
             'unscraped' => Article::where('is_scraped', false)->count(),
             'unanalyzed' => Article::where('is_scraped', true)->where('is_analyzed', false)->count(),
             'totalCases' => EnvironmentalCase::count(),
-            'totalLocations' => Location::has('cases')->count(),
+            'totalLocations' => Location::countNormalizedLocationsWithCases(),
         ];
 
         $categories = Category::all();
@@ -80,6 +80,7 @@ class AdminController extends Controller
                 'filter' => $filter,
                 'search' => $search,
             ],
+            'isBingLocked' => \Illuminate\Support\Facades\Cache::has('bing_historical_lock'),
         ]);
     }
 
@@ -169,8 +170,15 @@ class AdminController extends Controller
      */
     public function fetchHistorical(RssFeedService $rssFeedService)
     {
+        if (\Illuminate\Support\Facades\Cache::has('bing_historical_lock')) {
+            return back()->with('error', 'Penarikan riwayat massal (Bing) sedang dalam masa tunggu (Cooldown). Harap tunggu beberapa jam sebelum menggunakan fitur ini lagi.');
+        }
+
         $days = 15;
         $count = $rssFeedService->fetchHistoricalFromGoogle($days);
+
+        // Kunci tombol selama 12 jam ke depan (43200 detik) untuk keamanan anti-spam
+        \Illuminate\Support\Facades\Cache::put('bing_historical_lock', true, now()->addHours(12));
 
         return back()->with('success', "Berhasil menarik {$count} artikel historis dari {$days} hari terakhir. Artikel sedang diproses di latar belakang.");
     }

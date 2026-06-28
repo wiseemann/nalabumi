@@ -13,10 +13,12 @@ class AnalyticsController extends Controller
 {
     public function index(Request $request)
     {
-        // Overview stats (tidak difilter periode)
-        $totalArticles = Article::count();
-        $totalCases = EnvironmentalCase::count();
-        $totalLocations = Location::has('cases')->count();
+        $totalArticles = Article::where('is_analyzed', true)->count();
+        $totalCases = EnvironmentalCase::whereHas('article', function ($q) {
+            $q->where('is_analyzed', true);
+        })->count();
+        
+        $totalLocations = Location::countNormalizedLocationsWithCases();
 
         $casesByCategory = Category::withCount(['cases' => function ($query) {
             $query->whereHas('article', function ($q) {

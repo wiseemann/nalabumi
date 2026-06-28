@@ -117,6 +117,11 @@ class RssFeedService
             'url' => 'https://lapi.kumparan.com/v2.0/rss/',
             'source' => 'Kumparan',
         ],
+        // Bing News (General Stream for Automation)
+        [
+            'url' => 'https://www.bing.com/news/search?q=kerusakan+lingkungan+indonesia&format=rss&mkt=id-id',
+            'source' => 'Bing News',
+        ],
     ];
 
     public function fetchAll(): array
@@ -181,7 +186,7 @@ class RssFeedService
             }
 
             if ($i < count($keywords) - 1) {
-                usleep(500_000); // 500ms delay
+                usleep(2_000_000); // 2 seconds delay for safety against Bing's strict rate limits
             }
         }
 
