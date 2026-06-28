@@ -41,6 +41,8 @@ Route::middleware(['auth', \App\Http\Middleware\AdminMiddleware::class])->prefix
     Route::post('/articles/fetch-historical', [AdminController::class, 'fetchHistorical'])->name('admin.articles.fetch-historical');
     Route::patch('/articles/{id}/verify', [AdminController::class, 'verify'])->name('admin.articles.verify');
     Route::patch('/articles/{id}/reject', [AdminController::class, 'reject'])->name('admin.articles.reject');
+    Route::post('/scrape/run', [AdminController::class, 'runScrape'])->name('admin.scrape.run');
+    Route::get('/scrape/queue', [AdminController::class, 'scrapeQueue'])->name('admin.scrape.queue');
     
     // Media Reputations
     Route::get('/media-reputations', [MediaReputationController::class, 'index'])->name('admin.media-reputations.index');

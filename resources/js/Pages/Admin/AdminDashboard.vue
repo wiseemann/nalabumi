@@ -86,6 +86,55 @@ const fetchHistorical = () => {
     }
 };
 
+const runScrape = () => {
+    if (confirm('Scrape semua artikel yang belum di-scrape sekarang? Semua artikel tanpa konten akan diproses.')) {
+        router.post(route('admin.scrape.run'), {}, {
+            preserveScroll: true,
+            onSuccess: () => loadQueue(),
+        });
+    }
+};
+
+const runAnalysis = () => {
+    if (confirm('Analisis ulang semua artikel yang sudah di-scrape tapi belum dianalisis? Periksa data yang ada sekarang.')) {
+        router.post(route('admin.articles.sync-unanalyzed'), {}, {
+            preserveScroll: true,
+            onSuccess: () => loadQueue(),
+        });
+    }
+};
+
+const showQueuePanel = ref(false);
+const queueData = ref(null);
+const queueLoading = ref(false);
+const queueFilter = ref('all');
+
+const loadQueue = (type) => {
+    queueLoading.value = true;
+    const filterType = type || queueFilter.value;
+    fetch(route('admin.scrape.queue') + `?type=${filterType}`)
+        .then(res => res.json())
+        .then(data => {
+            queueData.value = data;
+            queueLoading.value = false;
+        })
+        .catch(() => {
+            queueLoading.value = false;
+        });
+};
+
+const toggleQueue = () => {
+    showQueuePanel.value = !showQueuePanel.value;
+    if (showQueuePanel.value && !queueData.value) {
+        loadQueue();
+    }
+};
+
+const setQueueFilter = (type) => {
+    queueFilter.value = type;
+    loadQueue(type);
+};
+
 const severityLabel = (severity) => {
     if (severity === null || severity === undefined) return { text: '—', class: 'bg-surface-container text-on-surface-variant' };
     if (severity >= 61) return { text: 'Kritis', class: 'bg-error-container text-on-error-container' };
@@ -194,7 +243,7 @@ const filterTabs = [
             </div>
 
             <!-- Secondary Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
                 <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
                     <span class="material-symbols-outlined text-primary text-[20px]">cases</span>
                     <div>
@@ -214,6 +263,13 @@ const filterTabs = [
                     <div>
                         <p class="text-sm font-bold text-on-surface">{{ stats.unscraped }}</p>
                         <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Scrape</p>
+                    </div>
+                </div>
+                <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-error text-[20px]">error_outline</span>
+                    <div>
+                        <p class="text-sm font-bold text-error">{{ stats.scrape_failed }}</p>
+                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Gagal Scrape</p>
                     </div>
                 </div>
                 <div class="glass-panel rounded-xl p-3 flex items-center justify-between">
@@ -248,6 +304,34 @@ const filterTabs = [
                         >
                             <span class="material-symbols-outlined text-[14px]">{{ tab.icon }}</span>
                             {{ tab.label }}
+                        </button>
+                        <div class="h-5 w-px bg-outline-variant mx-1"></div>
+                        <button
+                            @click="runScrape"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-tertiary-container text-on-tertiary-container hover:bg-tertiary hover:text-on-tertiary"
+                        >
+                            <span class="material-symbols-outlined text-[14px]">rss_feed</span>
+                            Run Scrape
+                        </button>
+                        <button
+                            @click="runAnalysis"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-secondary-container text-on-secondary-container hover:bg-secondary hover:text-on-secondary"
+                        >
+                            <span class="material-symbols-outlined text-[14px]">psychology</span>
+                            Run Analysis
+                        </button>
+                        <button
+                            @click="toggleQueue"
+                            :class="[
+                                showQueuePanel
+                                    ? 'bg-primary text-on-primary'
+                                    : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high',
+                                'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5'
+                            ]"
+                        >
+                            <span class="material-symbols-outlined text-[14px]">queue</span>
+                            Antrean
+                            <span v-if="queueData && (queueData.pending_scrape > 0 || queueData.pending_analysis > 0)" class="px-1.5 py-0.5 rounded-full bg-error text-on-error text-[10px] font-bold">{{ queueData.pending_scrape + queueData.pending_analysis }}</span>
                         </button>
                     </div>
                     <div class="flex items-center gap-3">
@@ -382,6 +466,142 @@ const filterTabs = [
                 </div>
             </div>
         </main>
+
+        <!-- Queue Panel -->
+        <Teleport to="body">
+            <div v-if="showQueuePanel" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showQueuePanel = false"></div>
+                <div class="relative glass-panel rounded-2xl w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-bold text-on-surface flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary">queue</span>
+                            Antrean
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <button @click="loadQueue" :disabled="queueLoading" class="p-1.5 rounded-lg hover:bg-surface-container transition-colors" title="Refresh">
+                                <span :class="['material-symbols-outlined text-on-surface-variant', queueLoading ? 'animate-spin' : '']">refresh</span>
+                            </button>
+                            <button @click="showQueuePanel = false" class="p-1 rounded-lg hover:bg-surface-container transition-colors">
+                                <span class="material-symbols-outlined text-on-surface-variant">close</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filter tabs -->
+                    <div class="flex items-center gap-2 mb-4">
+                        <button
+                            v-for="tab in [{ key: 'all', label: 'Semua' }, { key: 'scrape', label: 'Scrape' }, { key: 'analysis', label: 'Analysis' }]"
+                            :key="tab.key"
+                            @click="setQueueFilter(tab.key)"
+                            :class="[
+                                queueFilter === tab.key
+                                    ? 'bg-primary text-on-primary'
+                                    : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high',
+                                'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5'
+                            ]"
+                        >
+                            {{ tab.label }}
+                        </button>
+                    </div>
+
+                    <div v-if="queueLoading" class="flex items-center justify-center py-16">
+                        <span class="material-symbols-outlined animate-spin text-primary text-[36px]">progress_activity</span>
+                    </div>
+
+                    <template v-else-if="queueData">
+                        <!-- Queue Stats -->
+                        <div class="grid grid-cols-4 gap-3 mb-5">
+                            <div class="bg-surface-container rounded-xl p-3 text-center">
+                                <p class="text-2xl font-bold text-on-surface">{{ queueData.pending }}</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Total</p>
+                            </div>
+                            <div class="bg-surface-container rounded-xl p-3 text-center">
+                                <p class="text-2xl font-bold text-tertiary">{{ queueData.pending_scrape }}</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Scrape</p>
+                            </div>
+                            <div class="bg-surface-container rounded-xl p-3 text-center">
+                                <p class="text-2xl font-bold text-secondary">{{ queueData.pending_analysis }}</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Analysis</p>
+                            </div>
+                            <div class="bg-surface-container rounded-xl p-3 text-center">
+                                <p :class="['text-2xl font-bold', queueData.failed > 0 ? 'text-error' : 'text-primary']">{{ queueData.failed }}</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Gagal</p>
+                            </div>
+                        </div>
+
+                        <!-- Recent Jobs Table -->
+                        <div class="mb-5">
+                            <h3 class="text-sm font-bold text-on-surface mb-2 flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[16px] text-primary">pending_actions</span>
+                                Job dalam Antrean
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-surface-container text-on-surface-variant uppercase tracking-wider">
+                                        <tr>
+                                            <th class="px-3 py-2 font-semibold">Job</th>
+                                            <th class="px-3 py-2 font-semibold">Tipe</th>
+                                            <th class="px-3 py-2 font-semibold">Attempts</th>
+                                            <th class="px-3 py-2 font-semibold">Tersedia</th>
+                                            <th class="px-3 py-2 font-semibold">Dibuat</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-outline-variant">
+                                        <tr v-for="job in queueData.recentJobs" :key="job.id" class="hover:bg-surface-container-low transition-colors">
+                                            <td class="px-3 py-2 text-on-surface font-medium">{{ job.display_name }}</td>
+                                            <td class="px-3 py-2">
+                                                <span :class="[job.category === 'scrape' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-secondary-container text-on-secondary-container', 'px-1.5 py-0.5 rounded text-[10px] font-semibold']">{{ job.category === 'scrape' ? 'Scrape' : 'Analysis' }}</span>
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                <span :class="[job.attempts > 1 ? 'text-error' : 'text-on-surface-variant', 'font-semibold']">{{ job.attempts }}/3</span>
+                                            </td>
+                                            <td class="px-3 py-2 text-on-surface-variant">{{ job.available_at }}</td>
+                                            <td class="px-3 py-2 text-on-surface-variant">{{ job.created_at }}</td>
+                                        </tr>
+                                        <tr v-if="!queueData.recentJobs?.length">
+                                            <td colspan="5" class="px-3 py-8 text-center text-on-surface-variant">
+                                                <span class="material-symbols-outlined text-[28px] block mb-1">check_circle</span>
+                                                Tidak ada job dalam antrean.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Failed Jobs -->
+                        <div v-if="queueData.failedJobs?.length">
+                            <h3 class="text-sm font-bold text-on-surface mb-2 flex items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[16px] text-error">error</span>
+                                Job Gagal
+                            </h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-surface-container text-on-surface-variant uppercase tracking-wider">
+                                        <tr>
+                                            <th class="px-3 py-2 font-semibold">Queue</th>
+                                            <th class="px-3 py-2 font-semibold">Gagal Pada</th>
+                                            <th class="px-3 py-2 font-semibold">Exception</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-outline-variant">
+                                        <tr v-for="job in queueData.failedJobs" :key="job.id" class="hover:bg-surface-container-low transition-colors">
+                                            <td class="px-3 py-2 text-on-surface-variant">{{ job.queue }}</td>
+                                            <td class="px-3 py-2 text-on-surface-variant whitespace-nowrap">{{ job.failed_at }}</td>
+                                            <td class="px-3 py-2 text-error max-w-xs truncate" :title="job.exception_preview">{{ job.exception_preview }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div v-else class="flex items-center justify-center py-16">
+                        <p class="text-on-surface-variant">Gagal memuat data antrean.</p>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         <!-- Add Article Modal -->
         <Teleport to="body">

@@ -119,6 +119,7 @@ class ArticleScraperService
 
             if (!$response->successful()) {
                 Log::warning("Failed to scrape article {$article->id}: HTTP {$response->status()}");
+                $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
                 return false;
             }
 
@@ -127,6 +128,7 @@ class ArticleScraperService
 
             if (empty($content)) {
                 Log::warning("No content extracted for article {$article->id}");
+                $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
                 return false;
             }
 
@@ -141,6 +143,7 @@ class ArticleScraperService
 
         } catch (\Exception $e) {
             Log::error("Error scraping article {$article->id}: {$e->getMessage()}");
+            $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
             return false;
         }
     }
