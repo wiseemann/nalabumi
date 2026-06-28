@@ -46,12 +46,22 @@ class UrgencyScoreService
         }
 
         $avgSeverity = $cases->avg('severity') ?? 0;
+        $categoryDiversity = $this->calculateCategoryDiversity($cases); // 0.0 to 1.0
 
-        $recencyWeight = $this->calculateRecencyWeight($cases, $date);
-        $categoryDiversity = $this->calculateCategoryDiversity($cases);
+        // Base Score (purely based on severity and category diversity)
+        // Severity contributes up to 85%, Diversity contributes up to 15%
+        $baseScore = ($avgSeverity * 0.85) + ($categoryDiversity * 100 * 0.15);
 
-        $baseScore = ($avgSeverity * 0.4) + ($caseCount * 5 * 0.3) + ($recencyWeight * 100 * 0.2) + ($categoryDiversity * 100 * 0.1);
-        $finalScore = min(100, max(0, (int) $baseScore));
+        // Volume Multiplier: Penalize regions with very few cases (less evidence)
+        // 1 case = 0.6x, 2 cases = 0.7x, ..., 5+ cases = 1.0x
+        $volumeMultiplier = min(1.0, 0.5 + ($caseCount * 0.1));
+
+        // Recency Multiplier: Decay over time. If all cases are old, score drops.
+        $recencyMultiplier = $this->calculateRecencyWeight($cases, $date); // 0.0 to 1.0
+
+        // Final Calculation
+        $finalRawScore = $baseScore * $volumeMultiplier * $recencyMultiplier;
+        $finalScore = min(100, max(0, (int) $finalRawScore));
 
         $level = $this->scoreToLevel($finalScore);
 

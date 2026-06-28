@@ -291,6 +291,7 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                             <tr class="bg-surface-container-low border-b border-outline-variant">
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Tanggal</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Kategori</th>
+                                <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Lokasi Spesifik</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Sumber</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Judul Berita</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
@@ -307,6 +308,7 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                             >
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.date }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.category }}</td>
+                                <td class="px-6 py-4 text-sm text-on-surface font-medium truncate max-w-[150px]" :title="c.location_name">{{ c.location_name }}</td>
                                 <td class="px-6 py-4">
                                     <div class="flex items-center gap-2 text-sm text-on-surface">
                                         <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
