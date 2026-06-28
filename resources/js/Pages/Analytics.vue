@@ -132,7 +132,7 @@ const overviewCategoryChartSeries = [{
                             <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Kategori</span>
                             <span class="material-symbols-outlined text-secondary bg-secondary-container/20 p-2 rounded-full">category</span>
                         </div>
-                        <span class="text-4xl font-bold text-on-surface">{{ casesByCategory.length }}</span>
+                        <span class="text-4xl font-bold text-on-surface">{{ casesByCategory?.length || 0 }}</span>
                         <div class="flex items-center gap-1 text-primary">
                             <span class="material-symbols-outlined text-sm">check_circle</span>
                             <span class="text-xs font-semibold">Jenis kerusakan</span>
@@ -143,17 +143,11 @@ const overviewCategoryChartSeries = [{
                 <!-- Charts dari Dashboard lama -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                     <div class="lg:col-span-2 bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-on-surface mb-1">Tren Kasus Harian</h3>
-                        <p class="text-xs text-on-surface-variant mb-4 leading-relaxed">
-                            Grafik ini menunjukkan <strong>jumlah kasus kerusakan lingkungan</strong> yang teridentifikasi setiap harinya. Semakin tinggi puncak garis, semakin banyak kasus yang dilaporkan pada hari tersebut. Gunakan grafik ini untuk melihat apakah kondisi lingkungan sedang memburuk atau membaik dari waktu ke waktu.
-                        </p>
+                        <h3 class="text-lg font-semibold text-on-surface mb-4">Kasus Yang Teridentifikasi (per Hari)</h3>
                         <VueApexCharts type="area" height="280" :options="dailyTrendChartOptions" :series="dailyTrendChartSeries" />
                     </div>
                     <div class="bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-on-surface mb-1">Kasus per Kategori</h3>
-                        <p class="text-xs text-on-surface-variant mb-4 leading-relaxed">
-                            Grafik batang ini membandingkan <strong>total kasus berdasarkan jenis kerusakannya</strong> (misalnya: pencemaran air, deforestasi, dll.). Batang yang lebih tinggi berarti jenis kerusakan tersebut lebih sering terjadi di Indonesia.
-                        </p>
+                        <h3 class="text-lg font-semibold text-on-surface mb-4">Kasus per Kategori</h3>
                         <VueApexCharts type="bar" height="280" :options="overviewCategoryChartOptions" :series="overviewCategoryChartSeries" />
                     </div>
                 </div>
@@ -212,9 +206,6 @@ const overviewCategoryChartSeries = [{
                                 </tr>
                             </tbody>
                         </table>
-                        <div class="mt-3 flex justify-between items-center px-4 py-2 border-t border-outline-variant/30">
-                            <span class="text-[10px] text-on-surface-variant italic">This severity score is evaluated by AI.</span>
-                        </div>
                     </div>
                 </div>
             </div>

@@ -70,6 +70,22 @@ function getStatusBadge(severity) {
     return { text: 'Rendah', class: 'bg-primary-fixed-dim text-on-primary-fixed-variant border border-primary-fixed-dim' };
 }
 
+function getReliabilityBadge(color) {
+    if (color === 'success') return 'bg-[#c4eed0] text-[#0f5223] border border-[#0f5223]/20';
+    if (color === 'primary') return 'bg-[#c2e7ff] text-[#004d40] border border-[#004d40]/20';
+    if (color === 'warning') return 'bg-[#ffdf99] text-[#745b00] border border-[#745b00]/20';
+    if (color === 'error') return 'bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/20';
+    return 'bg-surface-variant text-on-surface-variant border border-outline-variant';
+}
+
+function getReliabilityDot(color) {
+    if (color === 'success') return '#0f5223';
+    if (color === 'primary') return '#004d40';
+    if (color === 'warning') return '#745b00';
+    if (color === 'error') return '#ba1a1a';
+    return '#757780';
+}
+
 function formatDate(dateStr) {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
@@ -83,7 +99,6 @@ function formatDate(dateStr) {
             <header class="flex flex-col gap-2">
                 <h1 class="text-4xl font-bold text-on-surface">Katalog Arsip Data</h1>
                 <p class="text-base text-on-surface-variant max-w-2xl">Akses komprehensif ke rekam jejak lingkungan. Filter, analisis, dan tinjau laporan masa lalu untuk perencanaan mitigasi yang lebih baik.</p>
-                <p class="text-xs text-on-surface-variant italic">This severity score is evaluated by AI.</p>
             </header>
 
             <section class="flex flex-col gap-4">
@@ -108,11 +123,11 @@ function formatDate(dateStr) {
                         </select>
                     </div>
                     <div class="flex flex-col gap-1.5 flex-1 min-w-[180px]">
-                        <label class="text-xs font-semibold text-on-surface-variant">Rentang Waktu (Mulai)</label>
+                        <label class="text-xs font-semibold text-on-surface-variant">Tanggal Mulai</label>
                         <input v-model="dateFrom" type="date" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary" />
                     </div>
                     <div class="flex flex-col gap-1.5 flex-1 min-w-[180px]">
-                        <label class="text-xs font-semibold text-on-surface-variant">Rentang Waktu (Selesai)</label>
+                        <label class="text-xs font-semibold text-on-surface-variant">Tanggal Selesai</label>
                         <input v-model="dateTo" type="date" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary" />
                     </div>
                     <div class="flex flex-col gap-1.5 flex-1 min-w-[200px]">
@@ -125,16 +140,16 @@ function formatDate(dateStr) {
                             <option value="kritis">Kritis</option>
                         </select>
                     </div>
-                    <div class="flex items-center gap-2 mt-2 lg:mt-0">
-                        <button @click="applyFilters" class="bg-primary hover:bg-surface-tint text-on-primary text-xs font-semibold px-6 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px]">
+                    <div class="flex flex-wrap items-center gap-2 mt-2 lg:mt-0 w-full lg:w-auto">
+                        <button @click="applyFilters" class="flex-1 lg:flex-none bg-primary hover:bg-surface-tint text-on-primary text-xs font-semibold px-4 lg:px-6 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] whitespace-nowrap">
                             <span class="material-symbols-outlined text-[18px]">filter_list</span>
-                            Terapkan Filter
+                            Terapkan
                         </button>
-                        <button @click="resetFilters" class="bg-surface-variant hover:bg-surface-dim text-on-surface-variant text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] border border-outline-variant">
+                        <button @click="resetFilters" class="flex-1 lg:flex-none bg-surface-variant hover:bg-surface-dim text-on-surface-variant text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] border border-outline-variant whitespace-nowrap">
                             <span class="material-symbols-outlined text-[18px]">refresh</span>
                             Reset
                         </button>
-                        <button @click="downloadCsv" class="bg-tertiary hover:bg-tertiary-container text-on-tertiary hover:text-on-tertiary-container text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] shadow-sm">
+                        <button @click="downloadCsv" class="flex-1 lg:flex-none bg-tertiary hover:bg-tertiary-container text-on-tertiary hover:text-on-tertiary-container text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors h-[42px] shadow-sm whitespace-nowrap">
                             <span class="material-symbols-outlined text-[18px]">download</span>
                             Unduh CSV
                         </button>
@@ -153,6 +168,7 @@ function formatDate(dateStr) {
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Sumber</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Judul Berita</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Kepercayaan</th>
                                 <th class="px-6 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider text-right">Aksi</th>
                             </tr>
                         </thead>
@@ -161,9 +177,18 @@ function formatDate(dateStr) {
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ formatDate(article.published_at) }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface font-medium">{{ article.locations.map(l => l.regency_name || l.name).join(', ') }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ article.categories.map(c => c.name).join(', ') }}</td>
-                                <td class="px-6 py-4 text-sm text-on-surface flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
-                                    {{ article.source }}
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center gap-2 text-sm text-on-surface">
+                                        <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
+                                        <span class="truncate max-w-[150px]">{{ article.source }}</span>
+                                        <span v-if="article.cases?.length" class="group flex items-center text-[10px] font-semibold text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded ml-1 whitespace-nowrap cursor-help transition-colors hover:bg-primary/20" title="Tingkat Kepercayaan AI">
+                                            <span class="material-symbols-outlined text-[12px] mr-1">psychology</span>
+                                            <span class="max-w-0 overflow-hidden group-hover:max-w-[130px] transition-all duration-300 ease-in-out whitespace-nowrap opacity-0 group-hover:opacity-100">
+                                                Tingkat Kepercayaan:&nbsp;
+                                            </span>
+                                            <span>{{ article.cases[0].confidence }}%</span>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-on-surface font-medium max-w-[200px] truncate" :title="article.title">{{ article.title }}</td>
                                 <td class="px-6 py-4">
@@ -173,12 +198,19 @@ function formatDate(dateStr) {
                                     </span>
                                     <span v-else class="text-on-surface-variant text-xs">—</span>
                                 </td>
+                                <td class="px-6 py-4">
+                                    <span v-if="article.reliability_level" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" :class="getReliabilityBadge(article.reliability_color)" :title="`Skor: ${article.reliability_score}`">
+                                        <span class="w-1.5 h-1.5 rounded-full mr-1.5" :style="{ background: getReliabilityDot(article.reliability_color) }"></span>
+                                        {{ article.reliability_level }}
+                                    </span>
+                                    <span v-else class="text-on-surface-variant text-xs">—</span>
+                                </td>
                                 <td class="px-6 py-4 text-right">
                                     <span class="material-symbols-outlined text-outline hover:text-primary transition-colors">chevron_right</span>
                                 </td>
                             </tr>
                             <tr v-if="articles.data.length === 0">
-                                <td colspan="7" class="px-6 py-12 text-center text-on-surface-variant">
+                                <td colspan="8" class="px-6 py-12 text-center text-on-surface-variant">
                                     <span class="material-symbols-outlined text-4xl mb-2 block">search_off</span>
                                     <p>Tidak ada data yang ditemukan</p>
                                 </td>
@@ -209,7 +241,11 @@ function formatDate(dateStr) {
                         <span class="text-xs text-primary tracking-wide uppercase font-semibold">Info Lebih Lanjut</span>
                     </div>
                     <h2 class="text-lg font-semibold text-on-surface">{{ selectedArticle?.title }}</h2>
-                    <p class="text-sm text-on-surface-variant mt-1">{{ selectedArticle?.source }} • {{ formatDate(selectedArticle?.published_at) }}</p>
+                    <p class="text-sm text-on-surface-variant mt-1 mb-3">{{ selectedArticle?.source }} • {{ formatDate(selectedArticle?.published_at) }}</p>
+                    <div v-if="selectedArticle?.reliability_level" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold" :class="getReliabilityBadge(selectedArticle.reliability_color)" :title="`Skor: ${selectedArticle.reliability_score}`">
+                        <span class="w-2 h-2 rounded-full mr-2" :style="{ background: getReliabilityDot(selectedArticle.reliability_color) }"></span>
+                        Status: {{ selectedArticle.reliability_level }} ({{ selectedArticle.reliability_score }}/100)
+                    </div>
                 </div>
                 <button @click="closeDrawer" class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant rounded-full p-1 transition-colors">
                     <span class="material-symbols-outlined">close</span>
@@ -230,19 +266,6 @@ function formatDate(dateStr) {
                                 <span class="text-xs text-on-surface-variant">{{ loc.province_name }}</span>
                             </div>
                         </div>
-                    </div>
-                </section>
-                <section v-if="selectedArticle?.cases?.length">
-                    <h3 class="text-xs text-on-surface-variant mb-3 uppercase font-semibold">Tingkat Keparahan</h3>
-                    <div class="bg-surface-container rounded-lg p-4 border border-outline-variant flex flex-col gap-2">
-                        <div class="flex items-center justify-between">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold" :class="getStatusBadge(selectedArticle.cases[0].severity).class">
-                                <span class="w-1.5 h-1.5 rounded-full mr-1.5" :style="{ background: getStatusBadge(selectedArticle.cases[0].severity).text === 'Kritis' ? '#ba1a1a' : getStatusBadge(selectedArticle.cases[0].severity).text === 'Tinggi' ? '#a96300' : getStatusBadge(selectedArticle.cases[0].severity).text === 'Sedang' ? '#745b00' : '#436526' }"></span>
-                                {{ getStatusBadge(selectedArticle.cases[0].severity).text }}
-                            </span>
-                            <span class="text-sm font-bold text-on-surface">{{ selectedArticle.cases[0].severity }}/100</span>
-                        </div>
-                        <p class="text-[10px] text-on-surface-variant italic text-center mt-1 border-t border-outline-variant/30 pt-1.5">This severity score is evaluated by AI.</p>
                     </div>
                 </section>
                 <section v-if="selectedArticle?.categories?.length">

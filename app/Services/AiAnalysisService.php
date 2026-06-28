@@ -20,6 +20,12 @@ class AiAnalysisService
         'Perburuan Satwa',
         'Kerusakan Pesisir',
         'Limbah Industri',
+        'Polusi Udara',
+        'Sampah Plastik',
+        'Konflik Agraria',
+        'Krisis Air',
+        'Kerusakan Terumbu Karang',
+        'Tambang Galian C',
     ];
 
     public function analyzeArticle(Article $article): ?array
@@ -42,9 +48,24 @@ class AiAnalysisService
 
             $this->storeAnalysis($article, $result);
 
+            // Auto-verification logic
+            $is_verified = null; // null means pending
+            $verified_at = null;
+            
+            if ($result['confidence'] >= 70) {
+                if ($result['severity'] > 0) {
+                    $is_verified = true; // High confidence environmental case -> Accept
+                } else {
+                    $is_verified = false; // High confidence NOT an environmental case -> Reject
+                }
+                $verified_at = now();
+            }
+
             $article->update([
                 'is_analyzed' => true,
                 'analyzed_at' => now(),
+                'is_verified' => $is_verified,
+                'verified_at' => $verified_at,
             ]);
 
             Log::info("Successfully analyzed article {$article->id}");
@@ -52,6 +73,13 @@ class AiAnalysisService
 
         } catch (\Exception $e) {
             Log::error("AI analysis failed for article {$article->id}: {$e->getMessage()}");
+            // Mark as analyzed but rejected so it doesn't get stuck forever
+            $article->update([
+                'is_analyzed' => true,
+                'analyzed_at' => now(),
+                'is_verified' => false,
+                'verified_at' => now(),
+            ]);
             return null;
         }
     }
@@ -98,10 +126,11 @@ PENTING:
 - Untuk province, gunakan nama resmi lengkap provinsi
 - Berikan skor severity 0-100 berdasarkan tingkat keparahan kerusakan
 - Berikan skor confidence 0-100 yang menunjukkan seberapa yakin Anda bahwa klasifikasi kategori, lokasi, dan severity sudah akurat berdasarkan isi berita
-- Jika artikel menyebutkan lokasi secara eksplisit, confidence tinggi (70-100)
+- Jika artikel menyebutkan lokasi secara eksplisit di dalam Indonesia, confidence tinggi (70-100)
 - Jika lokasi harus diperkirakan dari konteks, confidence sedang (40-69)
 - Jika lokasi tidak jelas, confidence rendah (0-39)
 - Jika tidak ada informasi tentang lingkungan, set severity = 0 dan confidence = 0
+- SANGAT PENTING: Jika kejadian atau lokasi utama berada di luar negeri (Bukan di negara Indonesia, contoh: India, Malaysia, dsb), JANGAN ekstrak lokasinya. Kosongkan array "locations", dan set severity = 0 serta confidence = 0.
 - Jawab HANYA dalam format JSON, tanpa teks tambahan
 PROMPT;
     }
@@ -147,13 +176,10 @@ PROMPT;
     protected function parseAiResponse(string $response): ?array
     {
         $response = trim($response);
-
-        if (str_starts_with($response, '```json')) {
-            $response = preg_replace('/^```json\s*/', '', $response);
-            $response = preg_replace('/\s*```$/', '', $response);
-        } elseif (str_starts_with($response, '```')) {
-            $response = preg_replace('/^```\s*/', '', $response);
-            $response = preg_replace('/\s*```$/', '', $response);
+        
+        // Extract JSON block using regex if there's surrounding text
+        if (preg_match('/\{.*\}/s', $response, $matches)) {
+            $response = $matches[0];
         }
 
         $parsed = json_decode($response, true);
@@ -174,13 +200,18 @@ PROMPT;
 
     protected function storeAnalysis(Article $article, array $result): void
     {
+        // Bersihkan kasus lama jika artikel dianalisis ulang agar tidak ganda
+        EnvironmentalCase::where('article_id', $article->id)->delete();
+
         foreach ($result['categories'] as $categoryName) {
             $category = Category::firstOrCreate(
                 ['name' => $categoryName],
                 ['slug' => str($categoryName)->slug()]
             );
-            $article->categories()->attach($category->id);
+            $article->categories()->syncWithoutDetaching([$category->id]);
         }
+
+        $categoryId = $article->categories()->first()?->id;
 
         foreach ($result['locations'] as $locationData) {
             $location = Location::updateOrCreate(
@@ -191,17 +222,22 @@ PROMPT;
                 ],
                 []
             );
-            $article->locations()->attach($location->id);
+            $article->locations()->syncWithoutDetaching([$location->id]);
 
-            EnvironmentalCase::create([
-                'article_id' => $article->id,
-                'location_id' => $location->id,
-                'category_id' => $article->categories()->first()?->id,
-                'cause' => $result['cause'],
-                'impact' => $result['impact'],
-                'severity' => $result['severity'],
-                'confidence' => $result['confidence'] ?? 0,
-            ]);
+            if ($categoryId) {
+                EnvironmentalCase::create([
+                    'article_id' => $article->id,
+                    'location_id' => $location->id,
+                    'category_id' => $categoryId,
+                    'cause' => $result['cause'],
+                    'impact' => $result['impact'],
+                    'severity' => $result['severity'],
+                    'confidence' => $result['confidence'] ?? 0,
+                ]);
+
+                // Instantly update the UrgencyScore for this specific location so the Map is Real-time!
+                app(\App\Services\UrgencyScoreService::class)->calculateForLocation($location);
+            }
         }
     }
 }

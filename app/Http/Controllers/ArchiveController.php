@@ -86,38 +86,16 @@ class ArchiveController extends Controller
 
     protected function buildArchiveQuery(Request $request)
     {
-        $query = Article::with(['categories', 'locations', 'cases'])
+        $query = Article::with(['categories', 'locations'])
             ->where('is_analyzed', true)
-            ->where('is_verified', '!=', false)
-            ->whereHas('cases', function ($q) {
-                $q->where('severity', '>', 0)
-                  ->where('confidence', '>', 0);
-            })
             ->orderByDesc('published_at');
 
         if ($request->filled('search')) {
             $search = $request->search;
-            $embeddingService = app(\App\Services\EmbeddingService::class);
-            $qdrantService = app(\App\Services\QdrantService::class);
-            
-            $queryEmbedding = $embeddingService->queryEmbedding($search);
-            
-            $articleIds = [];
-            if ($queryEmbedding) {
-                $searchResults = $qdrantService->search($queryEmbedding, 150);
-                $articleIds = array_filter(array_map(fn($r) => $r['payload']['article_id'] ?? null, $searchResults));
-            }
-            
-            if (!empty($articleIds)) {
-                $query->whereIn('id', $articleIds);
-                $idsString = implode(',', $articleIds);
-                $query->orderByRaw("FIELD(id, {$idsString})");
-            } else {
-                $query->where(function ($q) use ($search) {
-                    $q->where('title', 'like', "%{$search}%")
-                        ->orWhere('content', 'like', "%{$search}%");
-                });
-            }
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('content', 'like', "%{$search}%");
+            });
         }
 
         if ($request->filled('region')) {

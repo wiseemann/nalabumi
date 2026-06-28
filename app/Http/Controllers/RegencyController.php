@@ -21,12 +21,12 @@ class RegencyController extends Controller
         $page = $request->get('page', 1);
         $perPage = 15;
 
-        // Find location by regency name (partial match)
-        $location = Location::where('regency_name', 'like', "%{$regencyName}%")
+        // Find ALL locations matching this regency name
+        $locations = Location::where('regency_name', 'like', "%{$regencyName}%")
             ->orWhere('name', 'like', "%{$regencyName}%")
-            ->first();
+            ->get();
 
-        if (!$location) {
+        if ($locations->isEmpty()) {
             // Return with empty data but still show the page
             return Inertia::render('RegencyDetail', [
                 'regency' => $regencyName,
@@ -42,12 +42,36 @@ class RegencyController extends Controller
             ]);
         }
 
-        // Load the latest urgency score for this location
-        $urgencyScore = $location->latestUrgencyScore;
+        $locationIds = $locations->pluck('id')->toArray();
+        $primaryLocation = $locations->whereNotNull('regency_name')->first() ?? $locations->first();
+
+        // Load the latest urgency scores for these locations and aggregate them
+        $latestDate = \App\Models\UrgencyScore::whereIn('location_id', $locationIds)->max('date');
+        $urgencyScore = null;
+
+        if ($latestDate) {
+            $scores = \App\Models\UrgencyScore::whereIn('location_id', $locationIds)
+                ->where('date', $latestDate)
+                ->get();
+
+            if ($scores->isNotEmpty()) {
+                $maxScoreObj = $scores->sortByDesc('score')->first();
+                $totalCasesInRegency = \App\Models\EnvironmentalCase::whereIn('location_id', $locationIds)->count();
+                $avgSeverityInRegency = \App\Models\EnvironmentalCase::whereIn('location_id', $locationIds)->avg('severity') ?? 0;
+
+                $urgencyScore = (object)[
+                    'score' => $maxScoreObj->score,
+                    'level' => $maxScoreObj->level,
+                    'case_count' => $totalCasesInRegency,
+                    'avg_severity' => round($avgSeverityInRegency),
+                    'date' => $latestDate
+                ];
+            }
+        }
 
         // Build case query with filters
         $query = EnvironmentalCase::with(['article', 'category', 'location'])
-            ->where('location_id', $location->id);
+            ->whereIn('location_id', $locationIds);
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -97,27 +121,28 @@ class RegencyController extends Controller
                 'url' => $case->article?->url ?? null,
                 'category' => $case->category?->name ?? '—',
                 'severity' => $case->severity ?? 0,
+                'confidence' => $case->confidence ?? 0,
                 'cause' => $case->cause ?? null,
                 'impact' => $case->impact ?? null,
-                'location_name' => $location->regency_name ?? $location->name,
-                'province_name' => $location->province_name,
+                'location_name' => $case->location->regency_name ?? $case->location->name,
+                'province_name' => $case->location->province_name,
             ]);
 
         // Stats grouped by severity level using DB queries (more efficient)
         $stats = [
-            'critical' => EnvironmentalCase::where('location_id', $location->id)->where('severity', '>=', 61)->count(),
-            'high'     => EnvironmentalCase::where('location_id', $location->id)->whereBetween('severity', [41, 60])->count(),
-            'medium'   => EnvironmentalCase::where('location_id', $location->id)->whereBetween('severity', [21, 40])->count(),
-            'low'      => EnvironmentalCase::where('location_id', $location->id)->where('severity', '<=', 20)->count(),
-            'total'    => EnvironmentalCase::where('location_id', $location->id)->count(),
+            'critical' => EnvironmentalCase::whereIn('location_id', $locationIds)->where('severity', '>=', 61)->count(),
+            'high'     => EnvironmentalCase::whereIn('location_id', $locationIds)->whereBetween('severity', [41, 60])->count(),
+            'medium'   => EnvironmentalCase::whereIn('location_id', $locationIds)->whereBetween('severity', [21, 40])->count(),
+            'low'      => EnvironmentalCase::whereIn('location_id', $locationIds)->where('severity', '<=', 20)->count(),
+            'total'    => EnvironmentalCase::whereIn('location_id', $locationIds)->count(),
         ];
 
         $categories = Category::all();
 
         return Inertia::render('RegencyDetail', [
-            'regency' => $location->regency_name ?? $location->name,
-            'province' => $location->province_name ?? $request->get('province', ''),
-            'location' => $location,
+            'regency' => $primaryLocation->regency_name ?? $primaryLocation->name,
+            'province' => $primaryLocation->province_name ?? $request->get('province', ''),
+            'location' => $primaryLocation,
             'urgencyScore' => $urgencyScore,
             'stats' => $stats,
             'categories' => $categories,

@@ -233,12 +233,12 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                     </div>
                     <!-- Date From -->
                     <div class="flex flex-col gap-1.5 flex-1 min-w-[160px]">
-                        <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Rentang Waktu (Mulai)</label>
+                        <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Tanggal Mulai</label>
                         <input v-model="dateFrom" type="date" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary" />
                     </div>
                     <!-- Date To -->
                     <div class="flex flex-col gap-1.5 flex-1 min-w-[160px]">
-                        <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Rentang Waktu (Selesai)</label>
+                        <label class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">Tanggal Selesai</label>
                         <input v-model="dateTo" type="date" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary" />
                     </div>
                     <!-- Severity -->
@@ -270,12 +270,9 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
             <section class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
                 <!-- Table header info -->
                 <div class="p-4 border-b border-outline-variant bg-surface-container-lowest flex items-center justify-between flex-wrap gap-2">
-                    <span class="text-xs text-error italic flex flex-col gap-0.5">
-                        <span class="flex items-center gap-1.5">
-                            <span class="material-symbols-outlined text-[16px]">info</span>
-                            Hasil prediksi AI dapat keliru. Gunakan sebagai acuan awal investigasi.
-                        </span>
-                        <span class="text-[10px] text-on-surface-variant ml-5.5">This severity score is evaluated by AI.</span>
+                    <span class="text-xs text-error italic flex items-center gap-1.5">
+                        <span class="material-symbols-outlined text-[16px]">info</span>
+                        Hasil prediksi AI dapat keliru. Gunakan sebagai acuan awal investigasi.
                     </span>
                     <span class="text-xs text-on-surface-variant font-medium">
                         {{ pagination.total }} laporan ditemukan
@@ -310,9 +307,18 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                             >
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.date }}</td>
                                 <td class="px-6 py-4 text-sm text-on-surface">{{ c.category }}</td>
-                                <td class="px-6 py-4 text-sm text-on-surface flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
-                                    {{ c.source }}
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center gap-2 text-sm text-on-surface">
+                                        <span class="material-symbols-outlined text-on-surface-variant text-[16px]">public</span>
+                                        <span class="truncate max-w-[150px]">{{ c.source }}</span>
+                                        <span v-if="c.confidence" class="group flex items-center text-[10px] font-semibold text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded ml-1 whitespace-nowrap cursor-help transition-colors hover:bg-primary/20" title="Tingkat Kepercayaan AI">
+                                            <span class="material-symbols-outlined text-[12px] mr-1">psychology</span>
+                                            <span class="max-w-0 overflow-hidden group-hover:max-w-[130px] transition-all duration-300 ease-in-out whitespace-nowrap opacity-0 group-hover:opacity-100">
+                                                Tingkat Kepercayaan:&nbsp;
+                                            </span>
+                                            <span>{{ c.confidence }}%</span>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-on-surface font-medium truncate max-w-[240px]">
                                     <a v-if="c.url" :href="c.url" target="_blank" class="hover:text-primary hover:underline" @click.stop>
@@ -443,9 +449,6 @@ const drawerSeverityBadge = computed(() => selectedCase.value ? getSeverityBadge
                                         <span class="w-1.5 h-1.5 rounded-full mr-1.5" :class="drawerSeverityBadge.dot"></span>
                                         {{ drawerSeverityBadge.label }}
                                     </span>
-                                </div>
-                                <div class="text-[10px] text-on-surface-variant italic text-center mt-2 border-t border-outline-variant/30 pt-1.5">
-                                    This severity score is evaluated by AI.
                                 </div>
                             </div>
                         </section>

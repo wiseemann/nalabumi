@@ -15,17 +15,22 @@ class UrgencyScoreService
         $locations = Location::has('cases')->withCount('cases')->get();
 
         foreach ($locations as $location) {
-            $score = $this->calculateLocationScore($location, $date);
-            $this->storeUrgencyScore($location, $score, $date);
+            $this->calculateForLocation($location, $date);
         }
+    }
+
+    public function calculateForLocation(Location $location, $date = null): void
+    {
+        $date = $date ?? now()->toDateString();
+        $score = $this->calculateLocationScore($location, $date);
+        $this->storeUrgencyScore($location, $score, $date);
     }
 
     protected function calculateLocationScore(Location $location, string $date): array
     {
         $cases = $location->cases()
-            ->with('article')
             ->whereHas('article', function ($query) use ($date) {
-                $query->whereDate('published_at', '<=', $date);
+                $query->whereDate('created_at', '<=', $date);
             })
             ->get();
 
@@ -65,7 +70,7 @@ class UrgencyScoreService
         $caseCount = $cases->count();
 
         foreach ($cases as $case) {
-            $daysDiff = $dateObj->diffInDays($case->article?->published_at ?? $case->created_at);
+            $daysDiff = $dateObj->diffInDays($case->created_at);
             $weight = max(0, 1 - ($daysDiff / 365));
             $totalWeight += $weight;
         }

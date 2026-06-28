@@ -93,13 +93,37 @@ function normalizeRegencyName(name) {
         .toLowerCase();
 }
 
+// Pre-compute lookup table to prevent O(N^2) regex operations during map render
+const scoreLookup = new Map();
+watch(() => props.urgencyScores, (newScores) => {
+    scoreLookup.clear();
+    if (!newScores) return;
+    newScores.forEach(s => {
+        if (s.location?.regency_name) {
+            const rName = normalizeRegencyName(s.location.regency_name);
+            if (scoreLookup.has(rName)) {
+                const existing = scoreLookup.get(rName);
+                existing.case_count += (s.case_count || 0);
+                if (s.score > existing.score) {
+                    existing.score = s.score;
+                    existing.level = s.level;
+                }
+                scoreLookup.set(rName, existing);
+            } else {
+                scoreLookup.set(rName, { ...s });
+            }
+        } else if (s.location?.name) {
+            const rName = normalizeRegencyName(s.location.name);
+            if (!scoreLookup.has(rName)) {
+                scoreLookup.set(rName, { ...s });
+            }
+        }
+    });
+}, { immediate: true, deep: true });
+
 function getRegencyStatus(regencyName) {
     const normalizedName = normalizeRegencyName(regencyName);
-    const scoreData = props.urgencyScores.find(s => {
-        const locRegency = normalizeRegencyName(s.location?.regency_name);
-        const locName = normalizeRegencyName(s.location?.name);
-        return locRegency === normalizedName || locName === normalizedName;
-    });
+    const scoreData = scoreLookup.get(normalizedName);
     if (scoreData) {
         return {
             level: scoreData.level,
@@ -109,6 +133,28 @@ function getRegencyStatus(regencyName) {
     }
     return { level: 'Rendah', score: 0, caseCount: 0 };
 }
+
+// Compute real stats for the HUD
+const totalCases = computed(() => {
+    if (!props.urgencyScores) return 0;
+    return props.urgencyScores.reduce((sum, s) => sum + (s.case_count || 0), 0);
+});
+
+const criticalRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'kritis').length;
+});
+
+const highRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'tinggi').length;
+});
+
+const mediumRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'sedang').length;
+});
+
+const lowRegions = computed(() => {
+    return Array.from(scoreLookup.values()).filter(s => s.level?.toLowerCase() === 'rendah').length;
+});
 
 function getStatusConfig(level) {
     const normalizedLevel = level ? level.charAt(0).toUpperCase() + level.slice(1).toLowerCase() : 'Rendah';
@@ -129,12 +175,13 @@ function regencyStyle(feature) {
     const regencyName = feature.properties.WADMKK || feature.properties.NAME_2 || feature.properties.name || 'Tidak diketahui';
     const statusData = getRegencyStatus(regencyName);
     const sc = getStatusConfig(statusData.level);
+    const hasData = statusData.caseCount > 0;
     return {
-        fillColor: sc.fillColor,
+        fillColor: hasData ? sc.fillColor : '#e8e9e0',
         weight: 1,
         opacity: 0.6,
         color: '#8a8f82',
-        fillOpacity: statusData.caseCount > 0 ? 0.85 : 0.2,
+        fillOpacity: hasData ? 0.85 : 0.2,
     };
 }
 
@@ -158,6 +205,10 @@ function regencySelectedStyle(sc) {
     };
 }
 
+// Bottom sheet state management
+const selectedRegion = ref(null);
+const isBottomSheetMinimized = ref(false);
+
 onMounted(() => {
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mouseup', onMouseUp);
@@ -175,13 +226,19 @@ function initMap() {
     const initialZoom = 5;
 
     map.value = L.map(mapContainer.value, {
+        preferCanvas: true, // Crucial for performance with 514+ complex polygons
         zoomControl: false,
         attributionControl: true,
         minZoom: 4,
         maxZoom: 14,
+        maxBounds: [
+            [-13.0, 93.0], // South West
+            [8.0, 143.0]  // North East
+        ],
+        maxBoundsViscosity: 1.0,
     }).setView(initialCenter, initialZoom);
 
-    L.control.zoom({ position: 'topright' }).addTo(map.value);
+    L.control.zoom({ position: 'bottomright' }).addTo(map.value);
 
     map.value.createPane('regencyPane');
     map.value.getPane('regencyPane').style.zIndex = 200;
@@ -194,7 +251,8 @@ function initMap() {
     map.value.getPane('labelPane').style.zIndex = 300;
     map.value.getPane('labelPane').style.pointerEvents = 'none';
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    // Uber-style light map tiles with labels
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 20,
@@ -219,65 +277,17 @@ function buildRegencyLayer(data) {
             const statusData = getRegencyStatus(regencyName);
             const sc = getStatusConfig(statusData.level);
 
-            const tooltipContent =
-                `<div style="font-weight:600;font-size:14px;margin-bottom:2px;">${regencyName}</div>` +
-                `<div style="color:#43493d;font-size:12px;">Prov. ${provinceName}</div>` +
-                `<div style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;background:${sc.bg};color:${sc.textColor};">` +
-                `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${sc.color};"></span> ${statusData.level}` +
-                `</div>` +
-                `<div style="margin-top:3px;font-size:9px;color:#8a8f82;font-style:italic;">This severity score is evaluated by AI.</div>` +
-                `<div style="margin-top:6px;font-size:10px;color:#74796b;display:flex;align-items:center;gap:4px;">` +
-                `<span class="material-symbols-outlined" style="font-size:12px;">touch_app</span> Klik untuk lihat detail` +
-                `</div>`;
-
-            // Use a fully manual tooltip — NOT bindTooltip — so Leaflet's internal
-            // mouseover listener never fires. We control 100% when it shows/hides.
-            const tooltip = L.tooltip({
-                direction: 'top',
-                offset: [0, -8],
-                className: 'nalabumi-tooltip',
-            }).setContent(tooltipContent);
-
             layer.on('mouseover', function (e) {
-                // Block tooltips while the mouse button is held (dragging/panning)
                 if (isMouseButtonDown.value) return;
-
-                clearTimeout(hideDetailTimeout.value);
-
-                // Remove tooltip from any other layer
-                if (activeTooltipLayer.value && activeTooltipLayer.value !== layer) {
-                    activeTooltipLayer.value._tooltip && activeTooltipLayer.value._tooltip.remove();
-                }
-                activeTooltipLayer.value = layer;
-                layer._tooltip = tooltip;
-                tooltip.setLatLng(e.latlng).addTo(map.value);
-
                 if (activeRegencyLayer.value !== layer) {
                     e.target.setStyle(regencyHighlightStyle(sc));
                 }
-                showRegencyDetail(regencyName, provinceName, statusData);
-            });
-
-            layer.on('mousemove', function (e) {
-                // Remove tooltip immediately if mouse button is pressed while hovering
-                if (isMouseButtonDown.value) {
-                    tooltip.remove();
-                    return;
-                }
-                tooltip.setLatLng(e.latlng);
             });
 
             layer.on('mouseout', function (e) {
-                tooltip.remove();
-                if (activeTooltipLayer.value === layer) {
-                    activeTooltipLayer.value = null;
-                }
                 if (activeRegencyLayer.value !== layer) {
                     if (regencyLayer.value) regencyLayer.value.resetStyle(e.target);
                 }
-                hideDetailTimeout.value = setTimeout(() => {
-                    hideRegencyDetail();
-                }, 300);
             });
 
             layer.on('click', function (e) {
@@ -286,35 +296,30 @@ function buildRegencyLayer(data) {
                 }
                 activeRegencyLayer.value = layer;
                 layer.setStyle(regencySelectedStyle(sc));
-                tooltip.remove();
-                clearTimeout(hideDetailTimeout.value);
-                showRegencyDetail(regencyName, provinceName, statusData);
-                // Navigate to detail page after a short visual delay
-                setTimeout(() => {
-                    router.visit('/regency', {
-                        data: { regency: regencyName, province: provinceName },
-                    });
-                }, 180);
+                
+                selectedRegion.value = {
+                    regency: regencyName,
+                    province: provinceName,
+                    level: statusData.level,
+                    score: statusData.score,
+                    caseCount: statusData.caseCount,
+                    color: sc.color,
+                    bg: sc.bg,
+                    textColor: sc.textColor
+                };
+                isBottomSheetMinimized.value = false;
+                map.value.panTo(e.latlng);
             });
         },
     });
 }
 
-function showRegencyDetail(regency, province, statusData) {
-    const sc = getStatusConfig(statusData.level);
-    detailRegencyName.value = regency;
-    detailProvinceName.value = `Provinsi ${province}`;
-    detailStatusText.value = statusData.level;
-    detailStatusColor.value = sc.color;
-    detailStatusBg.value = sc.bg;
-    detailStatusTextColor.value = sc.textColor;
-    detailReports.value = statusData.caseCount;
-    detailScore.value = statusData.score + '/100';
-    infoDefault.value = false;
-}
-
-function hideRegencyDetail() {
-    infoDefault.value = true;
+function clearSelection() {
+    if (activeRegencyLayer.value && regencyLayer.value) {
+        regencyLayer.value.resetStyle(activeRegencyLayer.value);
+    }
+    activeRegencyLayer.value = null;
+    selectedRegion.value = null;
 }
 
 async function loadAllLayers() {
@@ -338,11 +343,13 @@ async function loadAllLayers() {
         provinceLayer.value.addTo(map.value);
 
         const provCount = provData.features ? provData.features.length : 0;
-        const regCount = regData.features ? regData.features.length : 0;
-                        countProvince.value = provCount;
-                        countRegency.value = 514;
+        countProvince.value = provCount;
+        
+        // Official count of Kabupaten/Kota in Indonesia is 514 (416 Kabupaten & 98 Kota)
+        // The GeoJSON has 518 features due to multi-part polygon definitions.
+        countRegency.value = 514;
 
-                        statusText.value = `${provCount} Provinsi · 514 Kab/Kota dimuat`;
+        statusText.value = `${provCount} Provinsi · 514 Kab/Kota dimuat`;
         loading.value = false;
 
     } catch (err) {
@@ -354,6 +361,7 @@ async function loadAllLayers() {
 
 function resetView() {
     map.value.setView([-0.7893, 113.9213], 5, { animate: true, duration: 0.8 });
+    clearSelection();
 }
 
 watch([selectedCategory, selectedDateRange], () => {
@@ -363,96 +371,176 @@ watch([selectedCategory, selectedDateRange], () => {
 
 <template>
     <AppLayout title="Dashboard - Peta Lingkungan">
-        <div class="h-[calc(100vh-4rem)] relative">
+        <div class="h-full w-full relative bg-[#F7F8F3] overflow-hidden">
+            <!-- Map Container -->
             <div ref="mapContainer" class="absolute inset-0 w-full h-full" style="z-index: 1;"></div>
-        </div>
 
-        <Teleport to="body">
-            <div class="fixed top-28 left-6 flex flex-col gap-4 pointer-events-none" style="z-index: 40;">
-                <div class="w-[340px] glass-panel rounded-xl overflow-hidden transition-all duration-300 pointer-events-auto">
-                    <div class="p-4 flex flex-col gap-3">
-                        <div class="flex items-center gap-2">
-                            <span class="material-symbols-outlined text-primary filled text-[22px]">public</span>
-                            <h2 class="font-semibold text-lg text-on-surface">Peta Administrasi</h2>
-                        </div>
-                        <p class="text-sm text-on-surface-variant leading-relaxed">
-                            Menampilkan batas provinsi dan kabupaten/kota seluruh Indonesia beserta status lingkungan secara interaktif.
-                        </p>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="bg-surface-container rounded-lg p-3 text-center">
-                                <span class="block text-xl font-bold text-primary">{{ countProvince }}</span>
-                                <span class="text-xs text-on-surface-variant uppercase mt-0.5 block">Provinsi</span>
+            <!-- Top Header Brand HUD (Mobile Friendly) -->
+            <div class="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none" style="z-index: 40;">
+                <div class="glass-panel px-4 py-2.5 flex items-center gap-2 rounded-xl pointer-events-auto shadow-xl border border-outline-variant/40">
+                    <span class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
+                    <span class="text-sm font-bold text-slate-800 tracking-wider">NALABUMI MONITOR</span>
+                </div>
+                <button @click="resetView" class="glass-panel px-4 py-2.5 flex items-center gap-1.5 rounded-xl pointer-events-auto shadow-xl hover:bg-black/5 transition-all border border-outline-variant/40 text-xs font-semibold text-slate-700">
+                    <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                    Reset Peta
+                </button>
+            </div>
+
+            <!-- Uber-Style Floating Legend Card (Visible on desktop/larger screens) -->
+            <div class="hidden md:flex absolute top-20 right-4 w-72 glass-panel flex-col gap-3 p-4 rounded-xl shadow-2xl border border-outline-variant/40 pointer-events-auto" style="z-index: 40;">
+                <div class="flex items-center gap-2 border-b border-outline-variant/40 pb-2">
+                    <span class="material-symbols-outlined text-primary text-xl">legend_toggle</span>
+                    <span class="text-xs font-bold text-slate-800 uppercase tracking-wider">Tingkat Kerentanan</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="flex items-center gap-2 bg-slate-100/60 p-2 rounded-lg border border-emerald-500/20">
+                        <span class="w-2 h-2 rounded-full" style="background:#436526;"></span>
+                        <span class="text-slate-700">Rendah</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-100/60 p-2 rounded-lg border border-amber-500/20">
+                        <span class="w-2 h-2 rounded-full" style="background:#eac248;"></span>
+                        <span class="text-slate-700">Sedang</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-100/60 p-2 rounded-lg border border-orange-500/20">
+                        <span class="w-2 h-2 rounded-full" style="background:#FF9D23;"></span>
+                        <span class="text-slate-700">Tinggi</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-100/60 p-2 rounded-lg border border-red-500/20">
+                        <span class="w-2 h-2 rounded-full" style="background:#ba1a1a;"></span>
+                        <span class="text-slate-700">Kritis</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mobile First Sliding Bottom Sheet -->
+            <div class="absolute bottom-0 left-0 right-0 md:left-1/2 md:right-auto md:w-[480px] md:-translate-x-1/2 transition-all duration-500 ease-out pointer-events-auto"
+                 :class="[isBottomSheetMinimized ? 'translate-y-[calc(100%-3rem)]' : 'translate-y-0']"
+                 style="z-index: 40;">
+                
+                <div class="glass-panel rounded-t-2xl shadow-2xl border-t border-x border-outline-variant/40 bg-surface/90 backdrop-blur-xl overflow-hidden pb-6">
+                    <!-- Sheet Drag Handle / Minimize Button -->
+                    <div @click="isBottomSheetMinimized = !isBottomSheetMinimized" class="w-full py-3 flex justify-center cursor-pointer hover:bg-black/5 transition-colors">
+                        <div class="w-12 h-1.5 rounded-full bg-slate-400/40 hover:bg-slate-400/60 transition-colors"></div>
+                    </div>
+
+                    <!-- Bottom Sheet Content Area -->
+                    <div class="px-6 flex flex-col gap-4">
+                        <!-- DEFAULT STATE: Overall Statistics (When first opened) -->
+                        <div v-if="!selectedRegion" class="flex flex-col gap-4">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-primary">explore</span>
+                                        Rangkuman Monitoring Nasional
+                                    </h3>
+                                    <p class="text-xs text-slate-500 mt-1">Platform Geospasial Lingkungan Terintegrasi Nalabumi</p>
+                                </div>
                             </div>
-                            <div class="bg-surface-container rounded-lg p-3 text-center">
-                                <span class="block text-xl font-bold text-primary">{{ countRegency }}</span>
-                                <span class="text-xs text-on-surface-variant uppercase mt-0.5 block">Kab/Kota</span>
+
+                            <div class="grid grid-cols-2 gap-3 mt-2">
+                                <div class="bg-slate-100/60 border border-outline-variant/40 rounded-xl p-3.5 flex flex-col">
+                                    <span class="text-2xl font-black text-primary tracking-tight">{{ countProvince }}</span>
+                                    <span class="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mt-1">Provinsi Dipantau</span>
+                                </div>
+                                <div class="bg-slate-100/60 border border-outline-variant/40 rounded-xl p-3.5 flex flex-col">
+                                    <span class="text-2xl font-black text-primary tracking-tight">{{ countRegency }}</span>
+                                    <span class="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mt-1">Kabupaten/Kota</span>
+                                </div>
+                            </div>
+
+                            <!-- Real statistics footer -->
+                            <div class="bg-slate-100/40 rounded-xl p-4 border border-outline-variant/40 flex flex-col sm:flex-row flex-wrap gap-4 items-start sm:items-center justify-between text-xs text-slate-700">
+                                <div class="flex items-center gap-2" title="Total akumulasi kasus lingkungan terdeteksi">
+                                    <span class="material-symbols-outlined text-slate-500 text-base">warning</span>
+                                    <span class="font-medium text-sm">Total: <strong class="text-slate-900">{{ totalCases }} Kasus</strong></span>
+                                </div>
+                                <div class="flex flex-wrap gap-3 sm:gap-4 items-center">
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus kritis">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#ba1a1a;"></span>
+                                        <span class="font-medium">Kritis: <strong class="text-slate-900">{{ criticalRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus tinggi">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#FF9D23;"></span>
+                                        <span class="font-medium">Tinggi: <strong class="text-slate-900">{{ highRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus sedang">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#eac248;"></span>
+                                        <span class="font-medium">Sedang: <strong class="text-slate-900">{{ mediumRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5" title="Jumlah wilayah berstatus rendah">
+                                        <span class="w-2.5 h-2.5 rounded-full" style="background:#436526;"></span>
+                                        <span class="font-medium">Rendah: <strong class="text-slate-900">{{ lowRegions }} Kab/Kota</strong></span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <div class="w-[340px] glass-panel rounded-xl px-4 py-3 flex items-center justify-between pointer-events-auto">
-                    <span class="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Status:</span>
-                    <div class="flex items-center gap-2">
-                        <div class="flex items-center gap-1">
-                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#436526;"></div>
-                            <span class="text-xs text-on-surface font-medium">Rendah</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#eac248;"></div>
-                            <span class="text-xs text-on-surface font-medium">Sedang</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#FF9D23;"></div>
-                            <span class="text-xs text-on-surface font-medium">Tinggi</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <div class="w-2.5 h-2.5 rounded-sm" style="background:#ba1a1a;"></div>
-                            <span class="text-xs text-on-surface font-medium">Kritis</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                        <!-- SELECTED REGION STATE -->
+                        <div v-else class="flex flex-col gap-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1 min-w-0 pr-4">
+                                    <div class="flex items-center gap-1.5 text-xs text-slate-500 uppercase tracking-wider font-semibold">
+                                        <span class="material-symbols-outlined text-xs">flag</span>
+                                        <span>{{ selectedRegion.province }}</span>
+                                    </div>
+                                    <h2 class="text-xl font-bold text-slate-800 truncate mt-1">{{ selectedRegion.regency }}</h2>
+                                </div>
+                                <button @click="clearSelection" class="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors">
+                                    <span class="material-symbols-outlined text-sm">close</span>
+                                </button>
+                            </div>
 
-            <div v-if="!infoDefault" class="fixed top-28 right-6 w-80 glass-panel rounded-xl overflow-hidden transition-all duration-300 pointer-events-auto" style="z-index: 40;">
-                <div class="p-4 flex flex-col gap-2.5">
-                    <div class="flex items-center gap-2 mb-1">
-                        <span class="material-symbols-outlined text-primary text-[20px]">location_on</span>
-                        <span class="text-xs text-on-surface-variant uppercase tracking-wider font-semibold">Detail Wilayah</span>
-                    </div>
-                    <h2 class="font-semibold text-lg text-on-surface leading-tight">{{ detailRegencyName }}</h2>
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-on-surface-variant text-[16px]">flag</span>
-                        <span class="text-sm text-on-surface-variant">{{ detailProvinceName }}</span>
-                    </div>
-                    <div class="h-px bg-outline-variant/40"></div>
-                    <div class="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider"
-                        :style="{ background: detailStatusBg, color: detailStatusTextColor }">
-                        <div class="w-2 h-2 rounded-full" :style="{ background: detailStatusColor }"></div>
-                        <span>{{ detailStatusText }}</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 mt-1">
-                        <div class="bg-surface-container rounded-lg p-2.5 text-center">
-                            <span class="block text-lg font-bold text-on-surface">{{ detailReports }}</span>
-                            <span class="text-xs text-on-surface-variant uppercase block">Laporan</span>
+                            <!-- Divider -->
+                            <div class="h-px bg-outline-variant/40"></div>
+
+                            <!-- Level and Scores -->
+                            <div class="flex items-center gap-3">
+                                <div class="px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-2 border"
+                                     :style="{ borderColor: selectedRegion.color, background: selectedRegion.bg, color: selectedRegion.textColor }">
+                                    <span class="w-2 h-2 rounded-full" :style="{ background: selectedRegion.color }"></span>
+                                    <span>Status: {{ selectedRegion.level }}</span>
+                                </div>
+                                <span class="text-xs text-slate-500">Kerentanan Lingkungan</span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-4 text-center hover:shadow-sm transition-shadow">
+                                    <span class="block text-2xl font-black text-slate-800">{{ selectedRegion.caseCount }}</span>
+                                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mt-1">Total Kasus</span>
+                                </div>
+                                <div class="bg-surface-container-lowest border border-outline-variant/50 rounded-xl p-4 text-center hover:shadow-sm transition-shadow">
+                                    <div class="flex items-baseline justify-center">
+                                        <span class="text-2xl font-black" :style="{ color: selectedRegion.textColor }">{{ selectedRegion.score }}</span>
+                                        <span class="text-xs font-bold text-slate-400">/100</span>
+                                    </div>
+                                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider block mt-1">Skor Kerawanan</span>
+                                </div>
+                            </div>
+
+                            <!-- Action button -->
+                            <button @click="router.visit('/regency', { data: { regency: selectedRegion.regency, province: selectedRegion.province } })"
+                                    class="w-full py-3 bg-primary hover:bg-primary-container text-on-primary font-bold rounded-xl transition-all shadow-lg shadow-primary/20 text-sm flex items-center justify-center gap-2">
+                                <span class="material-symbols-outlined text-sm text-on-primary">arrow_forward</span>
+                                Lihat Detail Wilayah
+                            </button>
                         </div>
-                        <div class="bg-surface-container rounded-lg p-2.5 text-center">
-                            <span class="block text-lg font-bold text-on-surface">{{ detailScore }}</span>
-                            <span class="text-xs text-on-surface-variant uppercase block">Skor</span>
-                        </div>
                     </div>
-                    <p class="text-[10px] text-on-surface-variant italic mt-2 text-center">This severity score is evaluated by AI.</p>
                 </div>
             </div>
 
-            <div class="fixed bottom-6 left-6 w-80 glass-panel rounded-lg px-4 py-2.5 flex items-center gap-3 pointer-events-auto" style="z-index: 40;">
-                <span class="material-symbols-outlined text-primary text-[18px]">info</span>
-                <span class="text-sm text-on-surface-variant flex-1 truncate">{{ statusText }}</span>
+            <!-- Global Footer Status HUD -->
+            <div class="absolute bottom-4 left-4 right-4 md:right-auto pointer-events-none hidden md:flex" style="z-index: 35;">
+                <div class="glass-panel px-4 py-2.5 flex items-center gap-2.5 rounded-lg border border-outline-variant/40">
+                    <span class="material-symbols-outlined text-primary text-sm">info</span>
+                    <span class="text-xs text-slate-700 font-medium">{{ statusText }}</span>
+                </div>
             </div>
 
-            <div v-if="loading" class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background/92 backdrop-blur-sm pointer-events-auto" style="z-index: 45;">
+            <!-- Loading overlay -->
+            <div v-if="loading" class="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background/95 backdrop-blur-md pointer-events-auto" style="z-index: 45;">
                 <div class="flex items-center gap-3">
-                    <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-16 w-auto object-contain" />
+                    <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-16 w-auto object-contain animate-pulse" />
                 </div>
                 <p class="text-sm text-on-surface-variant">Memuat data geospasial Indonesia...</p>
                 <div class="flex gap-2 mt-2">
@@ -463,40 +551,23 @@ watch([selectedCategory, selectedDateRange], () => {
                 <div class="w-48 mt-2 h-1 bg-surface-container rounded-full overflow-hidden">
                     <div class="h-full bg-primary rounded-full animate-pulse" style="width: 60%;"></div>
                 </div>
-                <p class="text-xs text-on-surface-variant/60 mt-1">{{ loadingStatus }}</p>
+                <p class="text-xs text-on-surface-variant/70 mt-1">{{ loadingStatus }}</p>
             </div>
-        </Teleport>
+        </div>
     </AppLayout>
 </template>
 
 <style>
-.nalabumi-tooltip {
-    background: rgba(255, 255, 255, 0.95) !important;
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(195, 200, 185, 0.6) !important;
-    border-radius: 10px !important;
-    padding: 10px 14px !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13px !important;
-    line-height: 1.5 !important;
-    color: #1a1c17 !important;
-}
-
-.nalabumi-tooltip::before {
-    border-top-color: rgba(255, 255, 255, 0.95) !important;
-}
-
 .leaflet-control-zoom a {
-    background: rgba(255, 255, 255, 0.92) !important;
-    backdrop-filter: blur(8px);
+    background: rgba(255, 255, 255, 0.9) !important;
+    backdrop-filter: blur(12px);
     color: #1a1c17 !important;
-    border-color: rgba(195, 200, 185, 0.5) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
     font-weight: 600 !important;
 }
 
 .leaflet-control-zoom a:hover {
-    background: rgba(67, 101, 38, 0.1) !important;
+    background: rgba(0, 0, 0, 0.05) !important;
 }
 
 /* Pointer cursor on regency polygons (clickable) */

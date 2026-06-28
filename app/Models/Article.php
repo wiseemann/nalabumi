@@ -24,6 +24,12 @@ class Article extends Model
         'scraped_at',
         'analyzed_at',
         'verified_at',
+        'reliability_score',
+        'reliability_level',
+    ];
+
+    protected $appends = [
+        'reliability_color',
     ];
 
     protected $casts = [
@@ -55,5 +61,22 @@ class Article extends Model
     public function verifiedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function getReliabilityColorAttribute(): string
+    {
+        if ($this->reliability_score === null) {
+            return 'neutral';
+        }
+
+        if ($this->reliability_score >= 90) {
+            return 'success';
+        } elseif ($this->reliability_score >= 70) {
+            return 'primary';
+        } elseif ($this->reliability_score >= 40) {
+            return 'warning';
+        } else {
+            return 'error';
+        }
     }
 }

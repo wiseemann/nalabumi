@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\MediaReputationController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\Auth\AuthController;
@@ -34,9 +35,14 @@ Route::post('/admin/logout', [AuthController::class, 'logout'])->name('admin.log
 Route::middleware(['auth', \App\Http\Middleware\AdminMiddleware::class])->prefix('admin')->group(function () {
     Route::get('/', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/articles', [AdminController::class, 'store'])->name('admin.articles.store');
+    Route::post('/articles/sync-unanalyzed', [AdminController::class, 'syncUnanalyzed'])->name('admin.articles.sync-unanalyzed');
+    Route::post('/articles/fetch-historical', [AdminController::class, 'fetchHistorical'])->name('admin.articles.fetch-historical');
     Route::patch('/articles/{id}/verify', [AdminController::class, 'verify'])->name('admin.articles.verify');
     Route::patch('/articles/{id}/reject', [AdminController::class, 'reject'])->name('admin.articles.reject');
-    Route::post('/rss', [AdminController::class, 'storeRss'])->name('admin.rss.store');
-    Route::post('/embedding', [AdminController::class, 'generateEmbeddings'])->name('admin.embedding');
-    Route::post('/deduplicate', [AdminController::class, 'deleteDuplicates'])->name('admin.deduplicate');
+    
+    // Media Reputations
+    Route::get('/media-reputations', [MediaReputationController::class, 'index'])->name('admin.media-reputations.index');
+    Route::post('/media-reputations', [MediaReputationController::class, 'store'])->name('admin.media-reputations.store');
+    Route::put('/media-reputations/{id}', [MediaReputationController::class, 'update'])->name('admin.media-reputations.update');
+    Route::delete('/media-reputations/{id}', [MediaReputationController::class, 'destroy'])->name('admin.media-reputations.destroy');
 });

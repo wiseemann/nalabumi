@@ -29,14 +29,14 @@ export default defineConfig({
         },
     },
     server: {
-        host: process.env.VITE_DEV_SERVER_HOST || '0.0.0.0',
+        host: '0.0.0.0',
         port: Number(process.env.VITE_DEV_SERVER_PORT) || 5173,
         strictPort: true,
-        hmr: {
-            host: 'localhost',
-        },
         watch: {
             usePolling: true,
+        },
+        hmr: {
+            host: 'localhost',
         },
         allowedHosts: true,
     },

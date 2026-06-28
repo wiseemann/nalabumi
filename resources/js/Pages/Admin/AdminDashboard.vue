@@ -12,7 +12,8 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const activeFilter = ref(props.filters?.filter || 'all');
 const showAddModal = ref(false);
-const showAddRssModal = ref(false);
+const showSyncModal = ref(false);
+const mobileMenuOpen = ref(false);
 
 const addForm = useForm({
     title: '',
@@ -21,33 +22,6 @@ const addForm = useForm({
     content: '',
     published_at: '',
 });
-
-const rssForm = useForm({
-    url: '',
-    source: '',
-});
-
-const submitRss = () => {
-    rssForm.post('/admin/rss', {
-        preserveScroll: true,
-        onSuccess: () => {
-            showAddRssModal.value = false;
-            rssForm.reset();
-        },
-    });
-};
-
-const triggerEmbedding = () => {
-    if (confirm('Apakah Anda yakin ingin membuat/regenerasi embedding untuk semua artikel teranalisis?')) {
-        router.post('/admin/embedding', {}, { preserveScroll: true });
-    }
-};
-
-const triggerDeduplicate = () => {
-    if (confirm('Apakah Anda yakin ingin mencari dan menghapus artikel duplikat?')) {
-        router.post('/admin/deduplicate', {}, { preserveScroll: true });
-    }
-};
 
 const applyFilter = (filter) => {
     activeFilter.value = filter;
@@ -92,6 +66,17 @@ const logout = () => {
     router.post('/admin/logout');
 };
 
+const confirmSyncUnanalyzed = () => {
+    showSyncModal.value = true;
+};
+
+const executeSync = () => {
+    showSyncModal.value = false;
+    router.post('/admin/articles/sync-unanalyzed', {}, {
+        preserveScroll: true,
+    });
+};
+
 const severityLabel = (severity) => {
     if (severity === null || severity === undefined) return { text: '—', class: 'bg-surface-container text-on-surface-variant' };
     if (severity >= 61) return { text: 'Kritis', class: 'bg-error-container text-on-error-container' };
@@ -123,20 +108,48 @@ const filterTabs = [
                 <Link href="/" class="flex items-center">
                     <img :src="'/logo.svg'" alt="Nalabumi Logo" class="h-10 w-auto object-contain" />
                 </Link>
-                <div class="h-6 w-px bg-outline-variant"></div>
-                <span class="text-sm font-bold text-primary uppercase tracking-wider">Admin Panel</span>
+                <div class="h-6 w-px bg-outline-variant hidden md:block"></div>
+                <span class="text-sm font-bold text-primary uppercase tracking-wider hidden md:block">Admin Panel</span>
+
+                <div class="hidden md:flex ml-4 gap-6 items-center">
+                    <Link href="/admin" class="text-primary border-b-2 border-primary py-5 text-sm font-medium transition-colors">Dasbor Utama</Link>
+                    <Link href="/admin/media-reputations" class="text-on-surface-variant hover:text-primary text-sm font-medium transition-colors">Reputasi Media</Link>
+                </div>
             </div>
             <div class="flex items-center gap-3">
-                <Link href="/dashboard" class="text-xs text-on-surface-variant hover:text-primary font-medium transition-colors flex items-center gap-1">
+                <Link href="/dashboard" class="hidden md:flex text-xs text-on-surface-variant hover:text-primary font-medium transition-colors items-center gap-1">
                     <span class="material-symbols-outlined text-[16px]">open_in_new</span>
                     Lihat Situs
                 </Link>
-                <button @click="logout" class="px-4 py-2 bg-error-container text-on-error-container rounded-lg font-semibold text-xs hover:bg-error hover:text-on-error transition-colors flex items-center gap-1.5">
+                <button @click="logout" class="hidden md:flex px-4 py-2 bg-error-container text-on-error-container rounded-lg font-semibold text-xs hover:bg-error hover:text-on-error transition-colors items-center gap-1.5">
                     <span class="material-symbols-outlined text-[16px]">logout</span>
                     Keluar
                 </button>
+                <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden p-2 text-on-surface-variant hover:text-primary transition-colors">
+                    <span class="material-symbols-outlined">{{ mobileMenuOpen ? 'close' : 'menu' }}</span>
+                </button>
             </div>
         </nav>
+
+        <!-- Mobile Menu Dropdown -->
+        <div v-if="mobileMenuOpen" class="md:hidden flex flex-col bg-surface border-b border-outline-variant shadow-md fixed top-16 left-0 w-full z-40">
+            <Link href="/admin" @click="mobileMenuOpen = false" class="px-6 py-4 border-b border-outline-variant/50 text-sm font-semibold flex items-center gap-3 text-on-surface">
+                <span class="material-symbols-outlined">dashboard</span>
+                Dasbor Utama
+            </Link>
+            <Link href="/admin/media-reputations" @click="mobileMenuOpen = false" class="px-6 py-4 border-b border-outline-variant/50 text-sm font-semibold flex items-center gap-3 text-on-surface">
+                <span class="material-symbols-outlined">verified</span>
+                Reputasi Media
+            </Link>
+            <Link href="/dashboard" @click="mobileMenuOpen = false" class="px-6 py-4 border-b border-outline-variant/50 text-sm font-semibold flex items-center gap-3 text-on-surface">
+                <span class="material-symbols-outlined">open_in_new</span>
+                Lihat Situs Publik
+            </Link>
+            <button @click="logout" class="px-6 py-4 text-sm font-semibold text-error flex items-center gap-3 text-left w-full hover:bg-error/10">
+                <span class="material-symbols-outlined">logout</span>
+                Keluar
+            </button>
+        </div>
 
         <main class="pt-16 px-6 md:px-10 pb-10">
             <!-- Stats Cards -->
@@ -194,12 +207,17 @@ const filterTabs = [
                         <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Scrape</p>
                     </div>
                 </div>
-                <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
-                    <span class="material-symbols-outlined text-tertiary text-[20px]">psychology</span>
-                    <div>
-                        <p class="text-sm font-bold text-on-surface">{{ stats.unanalyzed }}</p>
-                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Analisis</p>
+                <div class="glass-panel rounded-xl p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-tertiary text-[20px]">psychology</span>
+                        <div>
+                            <p class="text-sm font-bold text-on-surface">{{ stats.unanalyzed }}</p>
+                            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Analisis</p>
+                        </div>
                     </div>
+                    <button v-if="stats.unanalyzed > 0" @click="confirmSyncUnanalyzed" class="p-1.5 rounded-lg bg-tertiary/10 text-tertiary hover:bg-tertiary hover:text-on-tertiary transition-colors" title="Analisis Ulang (Sync)">
+                        <span class="material-symbols-outlined text-[16px]">sync</span>
+                    </button>
                 </div>
             </div>
 
@@ -235,34 +253,18 @@ const filterTabs = [
                             />
                         </div>
                         <button
+                            @click="router.post(route('admin.articles.fetch-historical'), {}, { preserveScroll: true })"
+                            class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center gap-1.5"
+                        >
+                            <span class="material-symbols-outlined text-[14px]">history</span>
+                            Tarik 15 Hari
+                        </button>
+                        <button
                             @click="showAddModal = true"
                             class="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-semibold hover:bg-primary-container hover:text-on-primary-container transition-colors flex items-center gap-1.5"
                         >
                             <span class="material-symbols-outlined text-[14px]">add</span>
                             Tambah Artikel
-                        </button>
-                        <button
-                            @click="showAddRssModal = true"
-                            class="px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center gap-1.5"
-                        >
-                            <span class="material-symbols-outlined text-[14px]">rss_feed</span>
-                            Tambah RSS Feed
-                        </button>
-                        <button
-                            @click="triggerEmbedding"
-                            class="px-3 py-1.5 bg-tertiary text-on-tertiary rounded-lg text-xs font-semibold hover:bg-tertiary-container hover:text-on-tertiary-container transition-colors flex items-center gap-1.5"
-                            title="Regenerasikan Embedding AI"
-                        >
-                            <span class="material-symbols-outlined text-[14px]">psychology</span>
-                            Embedding
-                        </button>
-                        <button
-                            @click="triggerDeduplicate"
-                            class="px-3 py-1.5 bg-error-container text-on-error-container rounded-lg text-xs font-semibold hover:bg-error hover:text-on-error transition-colors flex items-center gap-1.5"
-                            title="Cari & Hapus Artikel Duplikat"
-                        >
-                            <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
-                            Cek & Hapus Duplikat
                         </button>
                     </div>
                 </div>
@@ -275,7 +277,7 @@ const filterTabs = [
                                 <th class="px-4 py-3 font-semibold">Artikel</th>
                                 <th class="px-4 py-3 font-semibold">Sumber</th>
                                 <th class="px-4 py-3 font-semibold">Wilayah</th>
-                                <th class="px-4 py-3 font-semibold" title="This severity score is evaluated by AI.">Severity *</th>
+                                <th class="px-4 py-3 font-semibold">Severity</th>
                                 <th class="px-4 py-3 font-semibold">Confidence</th>
                                 <th class="px-4 py-3 font-semibold">Status</th>
                                 <th class="px-4 py-3 font-semibold text-right">Aksi</th>
@@ -346,9 +348,6 @@ const filterTabs = [
                             </tr>
                         </tbody>
                     </table>
-                    <div class="px-4 py-2 bg-surface-container-low border-t border-outline-variant text-[10px] text-on-surface-variant italic">
-                        * This severity score is evaluated by AI.
-                    </div>
                 </div>
 
                 <!-- Pagination -->
@@ -366,7 +365,7 @@ const filterTabs = [
                                 !link.url ? 'opacity-40 pointer-events-none' : '',
                                 'px-3 py-1 rounded-lg text-xs font-semibold transition-colors'
                             ]"
-                            v-html="link.label"
+                            v-html="link.label.replace('pagination.previous', '&laquo; Prev').replace('pagination.next', 'Next &raquo;')"
                             preserve-scroll
                         />
                     </div>
@@ -441,49 +440,25 @@ const filterTabs = [
             </div>
         </Teleport>
 
-        <!-- Add RSS Feed Modal -->
+        <!-- Sync Confirmation Modal -->
         <Teleport to="body">
-            <div v-if="showAddRssModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showAddRssModal = false"></div>
-                <div class="relative glass-panel rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-                    <div class="flex items-center justify-between mb-5">
-                        <h2 class="text-lg font-bold text-on-surface flex items-center gap-2">
-                            <span class="material-symbols-outlined text-primary">rss_feed</span>
-                            Tambah RSS Feed Baru
-                        </h2>
-                        <button @click="showAddRssModal = false" class="p-1 rounded-lg hover:bg-surface-container transition-colors">
-                            <span class="material-symbols-outlined text-on-surface-variant">close</span>
+            <div v-if="showSyncModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showSyncModal = false"></div>
+                <div class="relative bg-surface rounded-2xl w-full max-w-sm p-6 shadow-xl text-center animate-fade-in-up">
+                    <div class="w-12 h-12 rounded-full bg-tertiary/10 text-tertiary flex items-center justify-center mx-auto mb-4">
+                        <span class="material-symbols-outlined text-[28px]">sync_problem</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-on-surface mb-2">Analisis Ulang Artikel</h3>
+                    <p class="text-sm text-on-surface-variant mb-6 leading-relaxed">
+                        Apakah Anda yakin ingin memasukkan kembali artikel yang nyangkut (stuck) ke dalam antrean AI?
+                    </p>
+                    <div class="flex gap-3 justify-center">
+                        <button @click="showSyncModal = false" class="px-4 py-2.5 rounded-xl font-bold text-xs text-on-surface-variant hover:bg-surface-container-high transition-colors flex-1 border border-outline-variant/50">Batal</button>
+                        <button @click="executeSync" class="px-4 py-2.5 rounded-xl font-bold text-xs bg-tertiary text-on-tertiary hover:bg-tertiary/90 transition-colors flex-1 shadow-lg shadow-tertiary/20 flex items-center justify-center gap-2">
+                            <span class="material-symbols-outlined text-[16px]">sync</span>
+                            Sinkronisasi
                         </button>
                     </div>
-
-                    <form @submit.prevent="submitRss" class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-on-surface mb-1">URL RSS Feed *</label>
-                            <input v-model="rssForm.url" type="url" required
-                                class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                                placeholder="https://contoh.com/feed/ atau https://contoh.com/rss" />
-                            <p v-if="rssForm.errors.url" class="text-xs text-error mt-1">{{ rssForm.errors.url }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-on-surface mb-1">Nama Sumber Media *</label>
-                            <input v-model="rssForm.source" type="text" required
-                                class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                                placeholder="Contoh: Mongabay Indonesia, CNN Indonesia, dll." />
-                            <p v-if="rssForm.errors.source" class="text-xs text-error mt-1">{{ rssForm.errors.source }}</p>
-                        </div>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <button type="button" @click="showAddRssModal = false"
-                                class="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant text-xs font-semibold hover:bg-surface-container transition-colors">
-                                Batal
-                            </button>
-                            <button type="submit" :disabled="rssForm.processing"
-                                class="px-4 py-2 bg-primary text-on-primary rounded-lg text-xs font-semibold hover:bg-primary-container hover:text-on-primary-container transition-colors disabled:opacity-50 flex items-center gap-1.5">
-                                <span v-if="rssForm.processing" class="material-symbols-outlined animate-spin text-[14px]">progress_activity</span>
-                                <span class="material-symbols-outlined text-[14px]" v-else>save</span>
-                                {{ rssForm.processing ? 'Memproses...' : 'Simpan & Ambil Data' }}
-                            </button>
-                        </div>
-                    </form>
                 </div>
             </div>
         </Teleport>

@@ -12,6 +12,7 @@ use App\Models\Location;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use App\Services\RssFeedService;
 
 class AdminController extends Controller
 {
@@ -150,101 +151,27 @@ class AdminController extends Controller
     }
 
     /**
-     * Store a new custom RSS feed and fetch its articles immediately.
+     * Dispatch AnalyzeArticleJob for all scraped but unanalyzed articles.
      */
-    public function storeRss(Request $request, \App\Services\RssFeedService $rssFeedService)
+    public function syncUnanalyzed()
     {
-        $validated = $request->validate([
-            'url' => 'required|url|max:500|unique:rss_feeds,url',
-            'source' => 'required|string|max:255',
-        ]);
-
-        $feed = \App\Models\RssFeed::create([
-            'url' => $validated['url'],
-            'source' => $validated['source'],
-        ]);
-
-        try {
-            // Fetch and store articles from this feed immediately
-            $storedArticles = $rssFeedService->fetchAndStoreSingle($feed->url, $feed->source);
-            
-            // Dispatch scraping for newly stored articles
-            foreach ($storedArticles as $article) {
-                \App\Jobs\ScrapeArticleJob::dispatch($article);
-            }
-            
-            $count = count($storedArticles);
-            return back()->with('success', "RSS Feed berhasil ditambahkan. Terbaca {$count} artikel baru yang akan di-scrape & dianalisis secara otomatis.");
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Failed to parse manual RSS feed: " . $e->getMessage());
-            return back()->with('success', "RSS Feed berhasil ditambahkan, tetapi gagal mengambil artikel saat ini: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Generate or regenerate embeddings for all analyzed articles.
-     */
-    public function generateEmbeddings()
-    {
-        $articles = Article::where('is_analyzed', true)->get();
-        $count = $articles->count();
-
-        foreach ($articles as $article) {
-            \App\Jobs\GenerateEmbeddingJob::dispatch($article);
-        }
-
-        return back()->with('success', "Pembuatan embedding berhasil dipicu untuk {$count} artikel.");
-    }
-
-    /**
-     * Check and delete duplicate articles.
-     */
-    public function deleteDuplicates()
-    {
-        $deletedCount = 0;
+        $articles = Article::where('is_scraped', true)->where('is_analyzed', false)->get();
         
-        // 1. Group by title and delete duplicates
-        $duplicateTitles = Article::select('title')
-            ->groupBy('title')
-            ->havingRaw('COUNT(*) > 1')
-            ->pluck('title');
-
-        foreach ($duplicateTitles as $title) {
-            $articles = Article::where('title', $title)->orderBy('id')->get();
-            $keep = $articles->first();
-            $duplicates = $articles->slice(1);
-
-            foreach ($duplicates as $duplicate) {
-                $duplicate->categories()->detach();
-                $duplicate->locations()->detach();
-                $duplicate->cases()->delete();
-                app(\App\Services\QdrantService::class)->deletePoint($duplicate->id);
-                $duplicate->delete();
-                $deletedCount++;
-            }
+        foreach ($articles as $article) {
+            AnalyzeArticleJob::dispatch($article);
         }
 
-        // 2. Group by URL and delete duplicates
-        $duplicateUrls = Article::select('url')
-            ->groupBy('url')
-            ->havingRaw('COUNT(*) > 1')
-            ->pluck('url');
+        return back()->with('success', "{$articles->count()} artikel telah dimasukkan ke antrean analisis ulang.");
+    }
 
-        foreach ($duplicateUrls as $url) {
-            $articles = Article::where('url', $url)->orderBy('id')->get();
-            $keep = $articles->first();
-            $duplicates = $articles->slice(1);
+    /**
+     * Fetch historical articles from Google News RSS.
+     */
+    public function fetchHistorical(RssFeedService $rssFeedService)
+    {
+        $days = 15;
+        $count = $rssFeedService->fetchHistoricalFromGoogle($days);
 
-            foreach ($duplicates as $duplicate) {
-                $duplicate->categories()->detach();
-                $duplicate->locations()->detach();
-                $duplicate->cases()->delete();
-                app(\App\Services\QdrantService::class)->deletePoint($duplicate->id);
-                $duplicate->delete();
-                $deletedCount++;
-            }
-        }
-
-        return back()->with('success', "Berhasil menghapus {$deletedCount} artikel duplikat.");
+        return back()->with('success', "Berhasil menarik {$count} artikel historis dari {$days} hari terakhir. Artikel sedang diproses di latar belakang.");
     }
 }

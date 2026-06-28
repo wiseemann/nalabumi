@@ -32,8 +32,7 @@ class AnalyticsController extends Controller
             ->limit(10)
             ->get();
 
-        $dailyTrend = EnvironmentalCase::join('articles', 'cases.article_id', '=', 'articles.id')
-            ->selectRaw('DATE(articles.published_at) as date, COUNT(*) as count')
+        $dailyTrend = EnvironmentalCase::selectRaw('DATE(created_at) as date, COUNT(*) as count')
             ->groupBy('date')
             ->orderBy('date')
             ->limit(30)

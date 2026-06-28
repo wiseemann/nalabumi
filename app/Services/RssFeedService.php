@@ -88,30 +88,42 @@ class RssFeedService
             'url' => 'https://auriga.or.id/feed/',
             'source' => 'Auriga Nusantara',
         ],
+        // Additional General News
+        [
+            'url' => 'https://www.kompas.com/getrss/nasional',
+            'source' => 'Kompas',
+        ],
+        [
+            'url' => 'http://rss.tempo.co/nasional',
+            'source' => 'Tempo',
+        ],
+        [
+            'url' => 'https://news.detik.com/berita/rss',
+            'source' => 'Detik',
+        ],
+        [
+            'url' => 'https://www.republika.co.id/rss/nasional/',
+            'source' => 'Republika',
+        ],
+        [
+            'url' => 'https://feed.liputan6.com/rss/news',
+            'source' => 'Liputan6',
+        ],
+        [
+            'url' => 'https://tirto.id/sitemap/r/google-discover',
+            'source' => 'Tirto',
+        ],
+        [
+            'url' => 'https://lapi.kumparan.com/v2.0/rss/',
+            'source' => 'Kumparan',
+        ],
     ];
-
-    public function getFeeds(): array
-    {
-        $customFeeds = [];
-        try {
-            if (\Illuminate\Support\Facades\Schema::hasTable('rss_feeds')) {
-                $customFeeds = \App\Models\RssFeed::select('url', 'source')
-                    ->get()
-                    ->map(fn($f) => ['url' => $f->url, 'source' => $f->source])
-                    ->toArray();
-            }
-        } catch (\Exception $e) {
-            Log::error("Failed to fetch custom RSS feeds: " . $e->getMessage());
-        }
-        return array_merge($this->feeds, $customFeeds);
-    }
 
     public function fetchAll(): array
     {
         $allArticles = [];
-        $feeds = $this->getFeeds();
 
-        foreach ($feeds as $i => $feed) {
+        foreach ($this->feeds as $i => $feed) {
             try {
                 $articles = $this->fetchFeed($feed['url'], $feed['source']);
 
@@ -130,12 +142,57 @@ class RssFeedService
             }
 
             // Rate limiting: sleep 500ms between feed requests to be respectful
-            if ($i < count($feeds) - 1) {
+            if ($i < count($this->feeds) - 1) {
                 usleep(500_000);
             }
         }
 
         return $allArticles;
+    }
+
+    /**
+     * Fetch historical news from Bing News RSS using specific keywords.
+     */
+    public function fetchHistoricalFromGoogle(int $days = 15): int
+    {
+        $keywords = [
+            'deforestasi', 'tambang ilegal', 'karhutla', 'pencemaran lingkungan',
+            'pembalakan liar', 'limbah beracun', 'sampah plastik', 'perburuan satwa',
+            'reklamasi pesisir', 'kebakaran hutan', 'krisis iklim',
+            'pencemaran sungai', 'limbah laut', 'kerusakan terumbu karang', 'penangkapan ikan ilegal',
+            'galian c', 'konflik agraria', 'perampasan tanah', 'alih fungsi lahan',
+            'bencana ekologis', 'kerusakan alam', 'penggundulan hutan', 'pencemaran udara',
+            'tumpahan minyak', 'pabrik mencemari limbah'
+        ];
+        $allArticles = [];
+
+        foreach ($keywords as $i => $keyword) {
+            try {
+                $query = urlencode($keyword);
+                $url = "https://www.bing.com/news/search?q={$query}&format=rss&mkt=id-id";
+
+                $articles = $this->fetchFeed($url, 'Bing News');
+                $articles = array_filter($articles, fn($a) => $this->isEnvironmentalArticle($a));
+                
+                $allArticles = array_merge($allArticles, $articles);
+                Log::info("Fetched " . count($articles) . " historical articles from Bing News for keyword: {$keyword}");
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch historical RSS for {$keyword}: {$e->getMessage()}");
+            }
+
+            if ($i < count($keywords) - 1) {
+                usleep(500_000); // 500ms delay
+            }
+        }
+
+        $stored = $this->storeArticles($allArticles);
+        
+        // Dispatch scrape jobs for the new articles
+        foreach ($stored as $article) {
+            \App\Jobs\ScrapeArticleJob::dispatch($article);
+        }
+        
+        return count($stored);
     }
 
     /**
@@ -158,7 +215,7 @@ class RssFeedService
         return false;
     }
 
-    public function fetchFeed(string $url, string $source): array
+    protected function fetchFeed(string $url, string $source): array
     {
         $response = Http::timeout(30)
             ->withHeaders(['User-Agent' => 'Nalabumi AI RSS Reader/1.0'])
@@ -169,19 +226,6 @@ class RssFeedService
         }
 
         return $this->parseXml($response->body(), $source);
-    }
-
-    public function fetchAndStoreSingle(string $url, string $source): array
-    {
-        $articles = $this->fetchFeed($url, $source);
-
-        // Filter general news sources for environmental relevance
-        if (!in_array($source, $this->environmentalSources)) {
-            $articles = array_filter($articles, fn($a) => $this->isEnvironmentalArticle($a));
-            $articles = array_values($articles);
-        }
-
-        return $this->storeArticles($articles);
     }
 
     protected function parseXml(string $xmlContent, string $source): array
@@ -278,6 +322,13 @@ class RssFeedService
 
         foreach ($articles as $articleData) {
             if (empty($articleData['url'])) {
+                continue;
+            }
+
+            // Check for duplicate title to prevent identical news with different URLs
+            $existingTitle = Article::where('title', $articleData['title'])->first();
+            if ($existingTitle && $existingTitle->url !== $articleData['url']) {
+                $skipped++;
                 continue;
             }
 
