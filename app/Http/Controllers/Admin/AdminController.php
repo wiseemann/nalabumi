@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Jobs\AnalyzeArticleJob;
 use App\Jobs\CalculateReliabilityJob;
+use App\Jobs\FetchHistoricalNewsJob;
 use App\Jobs\GenerateEmbeddingJob;
 use App\Jobs\ScrapeArticleJob;
 use App\Jobs\ScrapeUnscrapedArticlesJob;
@@ -238,21 +239,21 @@ class AdminController extends Controller
     }
 
     /**
-     * Fetch historical articles from Google News RSS.
+     * Fetch historical articles from Bing News RSS.
      */
-    public function fetchHistorical(RssFeedService $rssFeedService)
+    public function fetchHistorical()
     {
         if (\Illuminate\Support\Facades\Cache::has('bing_historical_lock')) {
-            return back()->with('error', 'Penarikan riwayat massal (Bing) sedang dalam masa tunggu (Cooldown). Harap tunggu beberapa jam sebelum menggunakan fitur ini lagi.');
+            return back()->with('error', 'Penarikan riwayat massal sedang dalam masa tunggu (Cooldown). Harap tunggu beberapa jam sebelum menggunakan fitur ini lagi.');
         }
 
         $days = 15;
-        $count = $rssFeedService->fetchHistoricalFromGoogle($days);
 
-        // Kunci tombol selama 12 jam ke depan (43200 detik) untuk keamanan anti-spam
         \Illuminate\Support\Facades\Cache::put('bing_historical_lock', true, now()->addHours(12));
 
-        return back()->with('success', "Berhasil menarik {$count} artikel historis dari {$days} hari terakhir. Artikel sedang diproses di latar belakang.");
+        FetchHistoricalNewsJob::dispatch($days);
+
+        return back()->with('success', "Penarikan {$days} hari berita historis sedang diproses di latar belakang. Harap periksa Antrean untuk melihat progres.");
     }
 
     /**

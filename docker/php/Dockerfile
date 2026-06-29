@@ -24,9 +24,10 @@ RUN apk add --no-cache \
     bash \
     libpng-dev \
     libxml2-dev \
+    oniguruma-dev \
     zip \
     unzip \
-    && docker-php-ext-install -j$(nproc) pdo_mysql gd bcmath \
+    && docker-php-ext-install -j$(nproc) pdo_mysql gd bcmath mbstring dom xml simplexml \
     && docker-php-ext-enable opcache
 
 RUN addgroup -S app && adduser -S app -G app
