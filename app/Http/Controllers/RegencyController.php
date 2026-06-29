@@ -21,15 +21,55 @@ class RegencyController extends Controller
         $page = $request->get('page', 1);
         $perPage = 15;
 
-        // Find ALL locations matching this regency name
-        $locations = Location::where('regency_name', 'like', "%{$regencyName}%")
-            ->orWhere('name', 'like', "%{$regencyName}%")
-            ->get();
+        // 1. Prepare normalizer function
+        $normalize = function($name) {
+            if (!$name) return '';
+            return strtolower(trim(preg_replace('/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i', '', $name)));
+        };
+
+        $normalizedReqRegency = $normalize($regencyName);
+        $reqProvince = strtolower(trim($request->get('province')));
+
+        $allLocations = Location::withCount('cases')->get();
+        $matchedLocations = collect();
+
+        // 2. Exact Match (prioritize those with cases)
+        $exactMatches = $allLocations->filter(function($loc) use ($normalize, $normalizedReqRegency) {
+            if ($normalizedReqRegency === '') return false;
+            $norm = $normalize($loc->regency_name ?: $loc->name);
+            return $norm === $normalizedReqRegency;
+        });
+        
+        $matchedLocations = $exactMatches->filter(fn($loc) => $loc->cases_count > 0);
+
+        // 3. Parent Match (if no exact match with cases)
+        if ($matchedLocations->isEmpty() && !empty($normalizedReqRegency)) {
+            $matchedLocations = $allLocations->filter(function($loc) use ($normalize, $normalizedReqRegency) {
+                $norm = $normalize($loc->regency_name ?: $loc->name);
+                if (strlen($norm) < 4) return false;
+                // Check if requested regency starts with the DB regency
+                return (str_starts_with($normalizedReqRegency, $norm . ' ') || str_starts_with($normalizedReqRegency, $norm)) && $loc->cases_count > 0;
+            });
+        }
+
+        // 4. Province Fallback (if still no match)
+        if ($matchedLocations->isEmpty() && $reqProvince) {
+            $matchedLocations = $allLocations->filter(function($loc) use ($reqProvince) {
+                return empty($loc->regency_name) && strtolower(trim($loc->province_name)) === $reqProvince && $loc->cases_count > 0;
+            });
+        }
+        
+        // 5. If STILL empty, just use the exact matches (even if 0 cases) to prevent crash
+        if ($matchedLocations->isEmpty() && $exactMatches->isNotEmpty()) {
+            $matchedLocations = $exactMatches;
+        }
+
+        $locations = $matchedLocations;
 
         if ($locations->isEmpty()) {
             // Return with empty data but still show the page
             return Inertia::render('RegencyDetail', [
-                'regency' => $regencyName,
+                'regency' => $regencyName ?: $reqProvince ?: '-',
                 'province' => $request->get('province', ''),
                 'location' => null,
                 'urgencyScore' => null,

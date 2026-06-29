@@ -33,15 +33,31 @@ class Location extends Model
         return $this->hasMany(EnvironmentalCase::class);
     }
 
+    public function scopeValidLocation($query)
+    {
+        $invalid = ['', '-', 'Tidak disebutkan', 'tidak disebutkan'];
+        return $query->where(function ($q) use ($invalid) {
+            $q->whereNotIn('name', $invalid)
+              ->orWhereNotIn('regency_name', $invalid)
+              ->orWhereNotIn('province_name', $invalid);
+        });
+    }
+
     /**
      * Menghitung total wilayah terdampak dengan cara yang sama persis seperti
      * algoritma peta di Dashboard (menyatukan Kabupaten/Kota menjadi 1 entitas).
      */
     public static function countNormalizedLocationsWithCases(): int
     {
-        return self::has('cases')->get()->map(function ($loc) {
-            $name = $loc->regency_name ?: $loc->name;
-            return strtolower(trim(preg_replace('/^(Kabupaten|Kota|Kecamatan)\s+/i', '', $name ?? '')));
+        return self::validLocation()->has('cases')->get()->map(function ($loc) {
+            if (!empty($loc->regency_name)) {
+                $name = $loc->regency_name;
+            } else if (!empty($loc->province_name) && $loc->province_name !== '-') {
+                $name = $loc->province_name;
+            } else {
+                $name = $loc->name;
+            }
+            return strtolower(trim(preg_replace('/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i', '', $name ?? '')));
         })->filter()->unique()->count();
     }
 

@@ -23,6 +23,9 @@ class DashboardController extends Controller
                 }
             )
             ->with('location')
+            ->whereHas('location', function ($q) {
+                $q->validLocation();
+            })
             ->get();
 
         return Inertia::render('Dashboard', [

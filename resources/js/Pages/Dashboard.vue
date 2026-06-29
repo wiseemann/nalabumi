@@ -86,17 +86,16 @@ function getUrgencyLevel(score) {
 function normalizeRegencyName(name) {
     if (!name) return '';
     return name
-        .replace(/^Kabupaten\s+/i, '')
-        .replace(/^Kota\s+/i, '')
-        .replace(/^Kecamatan\s+/i, '')
+        .replace(/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i, '')
         .trim()
         .toLowerCase();
 }
 
-// Pre-compute lookup table to prevent O(N^2) regex operations during map render
 const scoreLookup = new Map();
+const provinceLookup = new Map();
 watch(() => props.urgencyScores, (newScores) => {
     scoreLookup.clear();
+    provinceLookup.clear();
     if (!newScores) return;
     newScores.forEach(s => {
         if (s.location?.regency_name) {
@@ -118,11 +117,29 @@ watch(() => props.urgencyScores, (newScores) => {
                 scoreLookup.set(rName, { ...s });
             }
         }
+        
+        // Populate province fallback lookup for province-level scores
+        if (s.location?.province_name && !s.location?.regency_name) {
+            const pName = s.location.province_name.toLowerCase().trim();
+            if (provinceLookup.has(pName)) {
+                const existing = provinceLookup.get(pName);
+                existing.case_count += (s.case_count || 0);
+                if (s.score > existing.score) {
+                    existing.score = s.score;
+                    existing.level = s.level;
+                }
+                provinceLookup.set(pName, existing);
+            } else {
+                provinceLookup.set(pName, { ...s });
+            }
+        }
     });
 }, { immediate: true, deep: true });
 
-function getRegencyStatus(regencyName) {
+function getRegencyStatus(regencyName, provinceName = '') {
     const normalizedName = normalizeRegencyName(regencyName);
+    
+    // 1. Exact match
     const scoreData = scoreLookup.get(normalizedName);
     if (scoreData) {
         return {
@@ -131,6 +148,31 @@ function getRegencyStatus(regencyName) {
             caseCount: scoreData.case_count,
         };
     }
+    
+    // 2. Parent match (e.g. Jakarta Barat inherits Jakarta)
+    for (const [key, val] of scoreLookup.entries()) {
+        if (key.length >= 4 && (normalizedName.startsWith(key + ' ') || normalizedName.startsWith(key))) {
+            return {
+                level: val.level,
+                score: val.score,
+                caseCount: val.case_count,
+            };
+        }
+    }
+    
+    // 3. Province fallback (e.g. Kutai Kartanegara inherits Kalimantan Timur if no exact match)
+    if (provinceName) {
+        const pName = provinceName.toLowerCase().trim();
+        const pScoreData = provinceLookup.get(pName);
+        if (pScoreData) {
+            return {
+                level: pScoreData.level,
+                score: pScoreData.score,
+                caseCount: pScoreData.case_count,
+            };
+        }
+    }
+    
     return { level: 'Rendah', score: 0, caseCount: 0 };
 }
 
@@ -173,7 +215,8 @@ function provinceStyle(feature) {
 
 function regencyStyle(feature) {
     const regencyName = feature.properties.WADMKK || feature.properties.NAME_2 || feature.properties.name || 'Tidak diketahui';
-    const statusData = getRegencyStatus(regencyName);
+    const provinceName = feature.properties.WADMPR || feature.properties.NAME_1 || '';
+    const statusData = getRegencyStatus(regencyName, provinceName);
     const sc = getStatusConfig(statusData.level);
     const hasData = statusData.caseCount > 0;
     return {
@@ -274,7 +317,7 @@ function buildRegencyLayer(data) {
         onEachFeature: function (feature, layer) {
             const regencyName = feature.properties.WADMKK || feature.properties.NAME_2 || feature.properties.name || 'Tidak diketahui';
             const provinceName = feature.properties.WADMPR || feature.properties.NAME_1 || feature.properties.province || 'Tidak diketahui';
-            const statusData = getRegencyStatus(regencyName);
+            const statusData = getRegencyStatus(regencyName, provinceName);
             const sc = getStatusConfig(statusData.level);
 
             layer.on('mouseover', function (e) {

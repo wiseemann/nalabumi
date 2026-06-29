@@ -1,7 +1,8 @@
 <script setup>
+import { ref, computed, watch } from 'vue';
+import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
-import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
     // Dashboard (overview) data
@@ -10,6 +11,46 @@ const props = defineProps({
     topRegions: Array,
     dailyTrend: Array,
 });
+
+const currentPage = ref(1);
+const itemsPerPage = 10;
+
+const displayedRegions = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return props.topRegions.slice(start, end);
+});
+
+const totalPages = computed(() => {
+    return Math.ceil(props.topRegions.length / itemsPerPage);
+});
+
+const inputPage = ref(currentPage.value);
+
+watch(currentPage, (newVal) => {
+    inputPage.value = newVal;
+});
+
+const goToPage = () => {
+    const p = parseInt(inputPage.value);
+    if (!isNaN(p) && p >= 1 && p <= totalPages.value) {
+        currentPage.value = p;
+    } else {
+        inputPage.value = currentPage.value; // Reset if invalid
+    }
+};
+
+const nextPage = () => {
+    if (currentPage.value < totalPages.value) {
+        currentPage.value++;
+    }
+};
+
+const prevPage = () => {
+    if (currentPage.value > 1) {
+        currentPage.value--;
+    }
+};
 
 // --- Daily Trend Chart ---
 const dailyTrendChartOptions = {
@@ -172,8 +213,8 @@ const overviewCategoryChartSeries = [{
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="(region, index) in topRegions" :key="region.id" 
-                                    @click="router.visit(`/regency?regency=${encodeURIComponent(region.regency_name || region.name)}&province=${encodeURIComponent(region.province_name || '')}&from=analytics`)"
+                                <tr v-for="(region, index) in displayedRegions" :key="region.id" 
+                                    @click="router.visit(`/regency?regency=${encodeURIComponent(region.regency_name || region.province_name || region.name || '')}&province=${encodeURIComponent(region.province_name || '')}&from=analytics`)"
                                     class="border-b border-outline-variant/50 hover:bg-surface-container transition-colors cursor-pointer group">
                                     <td class="py-4 px-4 text-center">
                                         <div class="inline-flex items-center justify-center w-7 h-7 rounded-full font-bold text-xs"
@@ -183,13 +224,13 @@ const overviewCategoryChartSeries = [{
                                                 'bg-tertiary text-on-tertiary shadow-sm': index === 2,
                                                 'bg-surface-variant text-on-surface-variant': index > 2
                                             }">
-                                            {{ index + 1 }}
+                                            {{ ((currentPage - 1) * itemsPerPage) + index + 1 }}
                                         </div>
                                     </td>
                                     <td class="py-4 px-4 font-semibold text-on-surface group-hover:text-primary transition-colors">
-                                        {{ region.regency_name || region.name }}
+                                        {{ region.regency_name || region.province_name || region.name || '-' }}
                                     </td>
-                                    <td class="py-4 px-4 text-on-surface-variant text-sm">{{ region.province_name }}</td>
+                                    <td class="py-4 px-4 text-on-surface-variant text-sm">{{ region.province_name || '-' }}</td>
                                     <td class="py-4 px-4 text-center">
                                         <span v-if="region.latest_urgency_score" class="inline-block px-3 py-1 rounded-full text-xs font-semibold"
                                             :class="{
@@ -206,6 +247,30 @@ const overviewCategoryChartSeries = [{
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <!-- Pagination UI -->
+                    <div v-if="totalPages > 1" class="mt-4 flex items-center justify-between border-t border-outline-variant/50 pt-4 px-2">
+                        <div class="text-sm text-on-surface-variant">
+                            Menampilkan <span class="font-bold">{{ ((currentPage - 1) * itemsPerPage) + 1 }}</span> hingga <span class="font-bold">{{ Math.min(currentPage * itemsPerPage, topRegions.length) }}</span> dari <span class="font-bold">{{ topRegions.length }}</span> daerah
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button @click="prevPage" :disabled="currentPage === 1"
+                                class="px-4 py-2 rounded-lg border border-outline-variant/60 hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm text-primary transition-colors flex items-center gap-1">
+                                <span class="material-symbols-outlined text-sm">chevron_left</span>
+                                Sebelumnya
+                            </button>
+                            <div class="flex items-center mx-2 text-sm font-bold text-on-surface">
+                                <input type="number" min="1" :max="totalPages" v-model.lazy="inputPage" @change="goToPage"
+                                    class="w-12 text-center py-1 px-1 border border-outline-variant rounded-md bg-surface text-on-surface mr-2 focus:ring-1 focus:ring-primary focus:border-primary outline-none" />
+                                <span>/ {{ totalPages }}</span>
+                            </div>
+                            <button @click="nextPage" :disabled="currentPage === totalPages"
+                                class="px-4 py-2 rounded-lg border border-outline-variant/60 hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm text-primary transition-colors flex items-center gap-1">
+                                Selanjutnya
+                                <span class="material-symbols-outlined text-sm">chevron_right</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
