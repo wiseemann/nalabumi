@@ -1,13 +1,11 @@
 services:
-  app:
+  php:
     build:
       context: .
-      dockerfile: docker/Dockerfile
-    image: nalabumi-app:production
-    container_name: nalabumi-app
+      dockerfile: docker/php/Dockerfile
+    image: nalabumi-php:production
+    container_name: nalabumi-php
     restart: unless-stopped
-    ports:
-      - "80:80"
     volumes:
       - storage-data:/app/storage:z
     env_file:
@@ -26,11 +24,69 @@ services:
     networks:
       - nalabumi-network
     healthcheck:
+      test: ["CMD", "php-fpm", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    image: nalabumi-nginx:production
+    container_name: nalabumi-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - storage-data:/app/storage:z
+    depends_on:
+      - php
+    networks:
+      - nalabumi-network
+    healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  queue:
+    image: nalabumi-php:production
+    container_name: nalabumi-queue
+    restart: unless-stopped
+    volumes:
+      - storage-data:/app/storage:z
+    env_file:
+      - env.prod
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+    networks:
+      - nalabumi-network
+    command: php artisan queue:listen --tries=1 --timeout=0
+
+  scheduler:
+    image: nalabumi-php:production
+    container_name: nalabumi-scheduler
+    restart: unless-stopped
+    volumes:
+      - storage-data:/app/storage:z
+    env_file:
+      - env.prod
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - nalabumi-network
+    command: /bin/sh -c "while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
 
   mariadb:
     image: mariadb:11.4
