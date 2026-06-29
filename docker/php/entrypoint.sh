@@ -12,5 +12,9 @@ php artisan config:cache || echo "Warning: config:cache failed (non-fatal)"
 php artisan route:cache || echo "Warning: route:cache failed (non-fatal)"
 php artisan view:cache || echo "Warning: view:cache failed (non-fatal)"
 
+if [ $# -gt 0 ]; then
+    exec "$@"
+fi
+
 echo "Starting PHP-FPM..."
 exec php-fpm
