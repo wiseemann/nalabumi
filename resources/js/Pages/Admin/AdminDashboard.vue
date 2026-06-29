@@ -53,6 +53,14 @@ const rejectArticle = (id) => {
     }
 };
 
+const deleteArticle = (id) => {
+    if (confirm('Apakah Anda yakin ingin menghapus artikel ini? Tindakan ini tidak dapat dibatalkan.')) {
+        router.delete(`/admin/articles/${id}`, {
+            preserveScroll: true,
+        });
+    }
+};
+
 const submitArticle = () => {
     addForm.post('/admin/articles', {
         preserveScroll: true,
@@ -96,8 +104,26 @@ const runScrape = () => {
 };
 
 const runAnalysis = () => {
-    if (confirm('Analisis ulang semua artikel yang sudah di-scrape tapi belum dianalisis? Periksa data yang ada sekarang.')) {
+    if (confirm('Analisis ulang semua artikel yang sudah di-scrape tapi belum dianalisis?')) {
         router.post(route('admin.articles.sync-unanalyzed'), {}, {
+            preserveScroll: true,
+            onSuccess: () => loadQueue(),
+        });
+    }
+};
+
+const runEmbedding = () => {
+    if (confirm('Generate embedding untuk semua artikel yang sudah dianalisis tapi belum memiliki embedding?')) {
+        router.post(route('admin.embedding.run'), {}, {
+            preserveScroll: true,
+            onSuccess: () => loadQueue(),
+        });
+    }
+};
+
+const runReliability = () => {
+    if (confirm('Hitung reliabilitas untuk semua artikel yang sudah dianalisis tapi belum memiliki skor?')) {
+        router.post(route('admin.reliability.run'), {}, {
             preserveScroll: true,
             onSuccess: () => loadQueue(),
         });
@@ -108,6 +134,14 @@ const showQueuePanel = ref(false);
 const queueData = ref(null);
 const queueLoading = ref(false);
 const queueFilter = ref('all');
+
+const showAnalysisModal = ref(false);
+const selectedArticle = ref(null);
+
+const viewAnalysis = (article) => {
+    selectedArticle.value = article;
+    showAnalysisModal.value = true;
+};
 
 const loadQueue = (type) => {
     queueLoading.value = true;
@@ -125,7 +159,7 @@ const loadQueue = (type) => {
 
 const toggleQueue = () => {
     showQueuePanel.value = !showQueuePanel.value;
-    if (showQueuePanel.value && !queueData.value) {
+    if (showQueuePanel.value) {
         loadQueue();
     }
 };
@@ -134,6 +168,66 @@ const setQueueFilter = (type) => {
     queueFilter.value = type;
     loadQueue(type);
 };
+
+const selectedIds = ref([]);
+
+const toggleSelect = (id) => {
+    const idx = selectedIds.value.indexOf(id);
+    if (idx === -1) {
+        selectedIds.value.push(id);
+    } else {
+        selectedIds.value.splice(idx, 1);
+    }
+};
+
+const isAllSelected = computed(() => props.articles.data?.length > 0 && selectedIds.value.length === props.articles.data.length);
+
+const toggleSelectAll = () => {
+    if (isAllSelected.value) {
+        selectedIds.value = [];
+    } else {
+        selectedIds.value = props.articles.data.map(a => a.id);
+    }
+};
+
+const bulkVerify = () => {
+    if (!selectedIds.value.length) return;
+    if (confirm(`Verifikasi ${selectedIds.value.length} artikel yang dipilih?`)) {
+        router.post('/admin/articles/bulk/verify', { ids: selectedIds.value }, {
+            preserveScroll: true,
+            onSuccess: () => { selectedIds.value = []; },
+        });
+    }
+};
+
+const bulkReject = () => {
+    if (!selectedIds.value.length) return;
+    if (confirm(`Tolak ${selectedIds.value.length} artikel yang dipilih?`)) {
+        router.post('/admin/articles/bulk/reject', { ids: selectedIds.value }, {
+            preserveScroll: true,
+            onSuccess: () => { selectedIds.value = []; },
+        });
+    }
+};
+
+const bulkDelete = () => {
+    if (!selectedIds.value.length) return;
+    if (confirm(`Hapus ${selectedIds.value.length} artikel yang dipilih? Tindakan ini tidak dapat dibatalkan.`)) {
+        router.post('/admin/articles/bulk/delete', { ids: selectedIds.value }, {
+            preserveScroll: true,
+            onSuccess: () => { selectedIds.value = []; },
+        });
+    }
+};
+
+const jobTypeTabs = [
+    { key: 'all', label: 'Semua' },
+    { key: 'scrape', label: 'Scrape' },
+    { key: 'scrape_unscraped', label: 'Unscraped' },
+    { key: 'analyze', label: 'Analyze' },
+    { key: 'embedding', label: 'Embedding' },
+    { key: 'reliability', label: 'Reliability' },
+];
 
 const severityLabel = (severity) => {
     if (severity === null || severity === undefined) return { text: '—', class: 'bg-surface-container text-on-surface-variant' };
@@ -151,7 +245,9 @@ const verificationBadge = (isVerified) => {
 
 const filterTabs = [
     { key: 'all', label: 'Semua', icon: 'list' },
-    { key: 'pending', label: 'Pending', icon: 'pending' },
+    { key: 'pending', label: 'Perlu Review', icon: 'pending' },
+    { key: 'unanalyzed', label: 'Belum Analisis', icon: 'psychology' },
+    { key: 'scrape_failed', label: 'Gagal Scrape', icon: 'error' },
     { key: 'verified', label: 'Terverifikasi', icon: 'check_circle' },
     { key: 'rejected', label: 'Ditolak', icon: 'cancel' },
 ];
@@ -222,7 +318,7 @@ const filterTabs = [
                 <div class="glass-panel rounded-xl p-4">
                     <div class="flex items-center gap-2 text-secondary mb-1">
                         <span class="material-symbols-outlined text-[18px]">pending</span>
-                        <span class="text-xs font-semibold uppercase tracking-wider">Pending Review</span>
+                        <span class="text-xs font-semibold uppercase tracking-wider">Perlu Review</span>
                     </div>
                     <p class="text-2xl font-bold text-secondary">{{ stats.pending }}</p>
                 </div>
@@ -243,7 +339,7 @@ const filterTabs = [
             </div>
 
             <!-- Secondary Stats -->
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+            <div class="grid grid-cols-2 md:grid-cols-7 gap-4 mt-4">
                 <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
                     <span class="material-symbols-outlined text-primary text-[20px]">cases</span>
                     <div>
@@ -272,17 +368,26 @@ const filterTabs = [
                         <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Gagal Scrape</p>
                     </div>
                 </div>
-                <div class="glass-panel rounded-xl p-3 flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <span class="material-symbols-outlined text-tertiary text-[20px]">psychology</span>
-                        <div>
-                            <p class="text-sm font-bold text-on-surface">{{ stats.unanalyzed }}</p>
-                            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Analisis</p>
-                        </div>
+                <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-tertiary text-[20px]">psychology</span>
+                    <div>
+                        <p class="text-sm font-bold text-on-surface">{{ stats.unanalyzed }}</p>
+                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Analisis</p>
                     </div>
-                    <button v-if="stats.unanalyzed > 0" @click="confirmSyncUnanalyzed" class="p-1.5 rounded-lg bg-tertiary/10 text-tertiary hover:bg-tertiary hover:text-on-tertiary transition-colors" title="Analisis Ulang (Sync)">
-                        <span class="material-symbols-outlined text-[16px]">sync</span>
-                    </button>
+                </div>
+                <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-primary text-[20px]">neurology</span>
+                    <div>
+                        <p class="text-sm font-bold text-on-surface">{{ stats.no_embedding }}</p>
+                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Embedding</p>
+                    </div>
+                </div>
+                <div class="glass-panel rounded-xl p-3 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-secondary text-[20px]">verified</span>
+                    <div>
+                        <p class="text-sm font-bold text-on-surface">{{ stats.no_reliability }}</p>
+                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider">Belum Reliabilitas</p>
+                    </div>
                 </div>
             </div>
 
@@ -307,20 +412,6 @@ const filterTabs = [
                         </button>
                         <div class="h-5 w-px bg-outline-variant mx-1"></div>
                         <button
-                            @click="runScrape"
-                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-tertiary-container text-on-tertiary-container hover:bg-tertiary hover:text-on-tertiary"
-                        >
-                            <span class="material-symbols-outlined text-[14px]">rss_feed</span>
-                            Run Scrape
-                        </button>
-                        <button
-                            @click="runAnalysis"
-                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-secondary-container text-on-secondary-container hover:bg-secondary hover:text-on-secondary"
-                        >
-                            <span class="material-symbols-outlined text-[14px]">psychology</span>
-                            Run Analysis
-                        </button>
-                        <button
                             @click="toggleQueue"
                             :class="[
                                 showQueuePanel
@@ -331,7 +422,7 @@ const filterTabs = [
                         >
                             <span class="material-symbols-outlined text-[14px]">queue</span>
                             Antrean
-                            <span v-if="queueData && (queueData.pending_scrape > 0 || queueData.pending_analysis > 0)" class="px-1.5 py-0.5 rounded-full bg-error text-on-error text-[10px] font-bold">{{ queueData.pending_scrape + queueData.pending_analysis }}</span>
+                            <span v-if="queueData && queueData.pending > 0" class="px-1.5 py-0.5 rounded-full bg-error text-on-error text-[10px] font-bold">{{ queueData.pending }}</span>
                         </button>
                     </div>
                     <div class="flex items-center gap-3">
@@ -365,12 +456,32 @@ const filterTabs = [
 
                 <!-- Articles Table -->
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-surface-container text-on-surface-variant uppercase tracking-wider">
-                            <tr>
-                                <th class="px-4 py-3 font-semibold">Artikel</th>
-                                <th class="px-4 py-3 font-semibold">Sumber</th>
-                                <th class="px-4 py-3 font-semibold">Wilayah</th>
+                    <!-- Bulk Actions -->
+                        <div v-if="selectedIds.length > 0" class="px-4 py-2 bg-primary-container/30 border-b border-outline-variant flex items-center gap-3">
+                            <span class="text-xs font-semibold text-on-surface">{{ selectedIds.length }} dipilih</span>
+                            <button @click="bulkVerify" class="px-2.5 py-1 rounded-lg bg-primary-container text-on-primary-container text-[10px] font-semibold hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">check</span>
+                                Verifikasi
+                            </button>
+                            <button @click="bulkReject" class="px-2.5 py-1 rounded-lg bg-error-container text-on-error-container text-[10px] font-semibold hover:bg-error hover:text-on-error transition-colors flex items-center gap-1">
+                                <span class="material-symbols-outlined text-[12px]">close</span>
+                                Tolak
+                            </button>
+                            <button @click="bulkDelete" class="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface-variant text-[10px] font-semibold hover:bg-error-container hover:text-on-error-container transition-colors flex items-center gap-1 border border-outline-variant">
+                                <span class="material-symbols-outlined text-[12px]">delete</span>
+                                Hapus
+                            </button>
+                            <button @click="selectedIds = []" class="ml-auto text-xs text-on-surface-variant hover:text-on-surface transition-colors">Batal</button>
+                        </div>
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-surface-container text-on-surface-variant uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-2 py-3 w-8">
+                                        <input type="checkbox" :checked="isAllSelected" @click="toggleSelectAll" class="rounded border-outline-variant text-primary focus:ring-primary" />
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">Artikel</th>
+                                    <th class="px-4 py-3 font-semibold">Sumber</th>
+                                    <th class="px-4 py-3 font-semibold">Wilayah</th>
                                 <th class="px-4 py-3 font-semibold">Severity</th>
                                 <th class="px-4 py-3 font-semibold">Confidence</th>
                                 <th class="px-4 py-3 font-semibold">Status</th>
@@ -379,6 +490,9 @@ const filterTabs = [
                         </thead>
                         <tbody class="divide-y divide-outline-variant">
                             <tr v-for="article in articles.data" :key="article.id" class="hover:bg-surface-container-low transition-colors">
+                                <td class="px-2 py-3">
+                                    <input type="checkbox" :checked="selectedIds.includes(article.id)" @change="toggleSelect(article.id)" class="rounded border-outline-variant text-primary focus:ring-primary" />
+                                </td>
                                 <td class="px-4 py-3 max-w-xs">
                                     <a :href="article.url" target="_blank" class="text-on-surface hover:text-primary font-medium line-clamp-2 transition-colors">
                                         {{ article.title }}
@@ -408,7 +522,19 @@ const filterTabs = [
                                     <span v-else class="text-on-surface-variant">—</span>
                                 </td>
                                 <td class="px-4 py-3">
-                                    <span
+                                    <span v-if="article.scrape_failed"
+                                        class="px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 bg-error-container text-on-error-container"
+                                    >
+                                        <span class="material-symbols-outlined text-[12px]">error</span>
+                                        Gagal Scrape
+                                    </span>
+                                    <span v-else-if="!article.is_analyzed"
+                                        class="px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 bg-surface-container text-on-surface-variant"
+                                    >
+                                        <span class="material-symbols-outlined text-[12px]">psychology</span>
+                                        Belum Analisis
+                                    </span>
+                                    <span v-else
                                         :class="[verificationBadge(article.is_verified).class, 'px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1']"
                                     >
                                         <span class="material-symbols-outlined text-[12px]">{{ verificationBadge(article.is_verified).icon }}</span>
@@ -417,7 +543,7 @@ const filterTabs = [
                                 </td>
                                 <td class="px-4 py-3 text-right whitespace-nowrap">
                                     <button
-                                        v-if="article.is_verified !== true"
+                                        v-if="article.is_analyzed && article.is_verified !== true"
                                         @click="verifyArticle(article.id)"
                                         class="p-1.5 rounded-lg bg-primary-container text-on-primary-container hover:bg-primary hover:text-on-primary transition-colors"
                                         title="Verifikasi"
@@ -425,17 +551,31 @@ const filterTabs = [
                                         <span class="material-symbols-outlined text-[16px]">check</span>
                                     </button>
                                     <button
-                                        v-if="article.is_verified !== false"
+                                        v-if="article.is_analyzed && article.is_verified !== false"
                                         @click="rejectArticle(article.id)"
                                         class="p-1.5 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-on-error transition-colors ml-1"
                                         title="Tolak"
                                     >
                                         <span class="material-symbols-outlined text-[16px]">close</span>
                                     </button>
+                                    <button
+                                        @click="viewAnalysis(article)"
+                                        class="p-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container transition-colors ml-1"
+                                        title="Detail Analisis"
+                                    >
+                                        <span class="material-symbols-outlined text-[16px]">info</span>
+                                    </button>
+                                    <button
+                                        @click="deleteArticle(article.id)"
+                                        class="p-1.5 rounded-lg bg-surface-container text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors ml-1"
+                                        title="Hapus"
+                                    >
+                                        <span class="material-symbols-outlined text-[16px]">delete</span>
+                                    </button>
                                 </td>
                             </tr>
                             <tr v-if="!articles.data?.length">
-                                <td colspan="7" class="px-4 py-10 text-center text-on-surface-variant">
+                                <td colspan="8" class="px-4 py-10 text-center text-on-surface-variant">
                                     <span class="material-symbols-outlined text-[32px] block mb-2">inbox</span>
                                     Tidak ada artikel ditemukan.
                                 </td>
@@ -488,9 +628,9 @@ const filterTabs = [
                     </div>
 
                     <!-- Filter tabs -->
-                    <div class="flex items-center gap-2 mb-4">
+                    <div class="flex items-center gap-2 mb-4 flex-wrap">
                         <button
-                            v-for="tab in [{ key: 'all', label: 'Semua' }, { key: 'scrape', label: 'Scrape' }, { key: 'analysis', label: 'Analysis' }]"
+                            v-for="tab in jobTypeTabs"
                             :key="tab.key"
                             @click="setQueueFilter(tab.key)"
                             :class="[
@@ -501,6 +641,7 @@ const filterTabs = [
                             ]"
                         >
                             {{ tab.label }}
+                            <span v-if="queueData?.counts?.[tab.key] > 0" class="px-1 py-0.5 rounded-full bg-on-primary/20 text-[10px] font-bold">{{ queueData.counts[tab.key] }}</span>
                         </button>
                     </div>
 
@@ -510,23 +651,37 @@ const filterTabs = [
 
                     <template v-else-if="queueData">
                         <!-- Queue Stats -->
-                        <div class="grid grid-cols-4 gap-3 mb-5">
-                            <div class="bg-surface-container rounded-xl p-3 text-center">
-                                <p class="text-2xl font-bold text-on-surface">{{ queueData.pending }}</p>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Total</p>
+                        <div class="grid grid-cols-6 gap-3 mb-5">
+                            <div v-for="tab in jobTypeTabs" :key="tab.key" class="bg-surface-container rounded-xl p-3 text-center">
+                                <p class="text-2xl font-bold" :class="tab.key === 'all' ? 'text-on-surface' : 'text-primary'">{{ tab.key === 'all' ? queueData.pending : (queueData.counts?.[tab.key] || 0) }}</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">{{ tab.label }}</p>
                             </div>
-                            <div class="bg-surface-container rounded-xl p-3 text-center">
-                                <p class="text-2xl font-bold text-tertiary">{{ queueData.pending_scrape }}</p>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Scrape</p>
-                            </div>
-                            <div class="bg-surface-container rounded-xl p-3 text-center">
-                                <p class="text-2xl font-bold text-secondary">{{ queueData.pending_analysis }}</p>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Analysis</p>
-                            </div>
-                            <div class="bg-surface-container rounded-xl p-3 text-center">
-                                <p :class="['text-2xl font-bold', queueData.failed > 0 ? 'text-error' : 'text-primary']">{{ queueData.failed }}</p>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Gagal</p>
-                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-center gap-3 mb-4 flex-wrap">
+                            <button @click="runScrape" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-tertiary-container text-on-tertiary-container hover:bg-tertiary hover:text-on-tertiary">
+                                <span class="material-symbols-outlined text-[14px]">rss_feed</span>
+                                Run Scrape
+                            </button>
+                            <button @click="runAnalysis" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-secondary-container text-on-secondary-container hover:bg-secondary hover:text-on-secondary">
+                                <span class="material-symbols-outlined text-[14px]">psychology</span>
+                                Run Analysis
+                            </button>
+                            <button @click="runEmbedding" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-primary-container text-on-primary-container hover:bg-primary hover:text-on-primary">
+                                <span class="material-symbols-outlined text-[14px]">neurology</span>
+                                Run Embedding
+                            </button>
+                            <button @click="runReliability" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 bg-surface-container text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container border border-outline-variant">
+                                <span class="material-symbols-outlined text-[14px]">verified</span>
+                                Run Reliability
+                            </button>
+                        </div>
+
+                        <div v-if="queueData.failed > 0" class="mb-5 text-center">
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-error-container text-on-error-container text-xs font-semibold">
+                                <span class="material-symbols-outlined text-[14px]">error</span>
+                                {{ queueData.failed }} job gagal
+                            </span>
                         </div>
 
                         <!-- Recent Jobs Table -->
@@ -550,7 +705,7 @@ const filterTabs = [
                                         <tr v-for="job in queueData.recentJobs" :key="job.id" class="hover:bg-surface-container-low transition-colors">
                                             <td class="px-3 py-2 text-on-surface font-medium">{{ job.display_name }}</td>
                                             <td class="px-3 py-2">
-                                                <span :class="[job.category === 'scrape' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-secondary-container text-on-secondary-container', 'px-1.5 py-0.5 rounded text-[10px] font-semibold']">{{ job.category === 'scrape' ? 'Scrape' : 'Analysis' }}</span>
+                                                <span :class="[job.job_type === 'scrape' || job.job_type === 'scrape_unscraped' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-secondary-container text-on-secondary-container', 'px-1.5 py-0.5 rounded text-[10px] font-semibold']">{{ job.job_type === 'scrape_unscraped' ? 'Unscraped' : job.job_type.charAt(0).toUpperCase() + job.job_type.slice(1) }}</span>
                                             </td>
                                             <td class="px-3 py-2">
                                                 <span :class="[job.attempts > 1 ? 'text-error' : 'text-on-surface-variant', 'font-semibold']">{{ job.attempts }}/3</span>
@@ -666,6 +821,119 @@ const filterTabs = [
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Analysis Detail Modal -->
+        <Teleport to="body">
+            <div v-if="showAnalysisModal && selectedArticle" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showAnalysisModal = false"></div>
+                <div class="relative glass-panel rounded-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+                    <div class="flex items-center justify-between mb-5">
+                        <h2 class="text-lg font-bold text-on-surface flex items-center gap-2">
+                            <span class="material-symbols-outlined text-primary">analytics</span>
+                            Detail Proses Analisis
+                        </h2>
+                        <button @click="showAnalysisModal = false" class="p-1 rounded-lg hover:bg-surface-container transition-colors">
+                            <span class="material-symbols-outlined text-on-surface-variant">close</span>
+                        </button>
+                    </div>
+
+                    <!-- Article Info -->
+                    <div class="mb-5">
+                        <a :href="selectedArticle.url" target="_blank" class="text-sm font-bold text-primary hover:underline">{{ selectedArticle.title }}</a>
+                        <p class="text-xs text-on-surface-variant mt-0.5">{{ selectedArticle.source }} — {{ selectedArticle.published_at }}</p>
+                    </div>
+
+                    <!-- Pipeline Status -->
+                    <div class="grid grid-cols-4 gap-3 mb-5">
+                        <div class="rounded-xl p-3 text-center" :class="selectedArticle.is_scraped ? 'bg-primary-container text-on-primary-container' : selectedArticle.scrape_failed ? 'bg-error-container text-on-error-container' : 'bg-surface-container text-on-surface-variant'">
+                            <span class="material-symbols-outlined text-[20px] block mb-1">{{ selectedArticle.is_scraped ? 'check_circle' : selectedArticle.scrape_failed ? 'error' : 'cloud_download' }}</span>
+                            <p class="text-[10px] font-semibold uppercase tracking-wider">Scrape</p>
+                            <p class="text-[9px] mt-0.5 opacity-70">{{ selectedArticle.scraped_at || (selectedArticle.scrape_failed ? 'Gagal' : '—') }}</p>
+                        </div>
+                        <div class="rounded-xl p-3 text-center" :class="selectedArticle.is_analyzed ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-on-surface-variant'">
+                            <span class="material-symbols-outlined text-[20px] block mb-1">{{ selectedArticle.is_analyzed ? 'check_circle' : 'psychology' }}</span>
+                            <p class="text-[10px] font-semibold uppercase tracking-wider">Analisis</p>
+                            <p class="text-[9px] mt-0.5 opacity-70">{{ selectedArticle.analyzed_at || '—' }}</p>
+                        </div>
+                        <div class="rounded-xl p-3 text-center" :class="selectedArticle.has_embedding ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-on-surface-variant'">
+                            <span class="material-symbols-outlined text-[20px] block mb-1">{{ selectedArticle.has_embedding ? 'check_circle' : 'neurology' }}</span>
+                            <p class="text-[10px] font-semibold uppercase tracking-wider">Embedding</p>
+                        </div>
+                        <div class="rounded-xl p-3 text-center" :class="selectedArticle.reliability_score !== null ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-on-surface-variant'">
+                            <span class="material-symbols-outlined text-[20px] block mb-1">{{ selectedArticle.reliability_score !== null ? 'check_circle' : 'verified' }}</span>
+                            <p class="text-[10px] font-semibold uppercase tracking-wider">Reliabilitas</p>
+                            <p class="text-[9px] mt-0.5 opacity-70">{{ selectedArticle.reliability_level || '—' }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Analysis Results -->
+                    <div v-if="selectedArticle.is_analyzed" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-surface-container rounded-xl p-4">
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Kategori</p>
+                                <div class="flex flex-wrap gap-1">
+                                    <span v-for="cat in selectedArticle.categories" :key="cat" class="px-2 py-0.5 bg-primary-container text-on-primary-container rounded text-[10px] font-semibold">{{ cat }}</span>
+                                    <span v-if="!selectedArticle.categories?.length" class="text-xs text-on-surface-variant">—</span>
+                                </div>
+                            </div>
+                            <div class="bg-surface-container rounded-xl p-4">
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Lokasi</p>
+                                <div class="flex flex-wrap gap-1">
+                                    <span v-for="loc in selectedArticle.locations" :key="loc" class="px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded text-[10px] font-semibold">{{ loc }}</span>
+                                    <span v-if="!selectedArticle.locations?.length" class="text-xs text-on-surface-variant">—</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-surface-container rounded-xl p-4">
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Tingkat Keparahan</p>
+                                <div class="flex items-center gap-2">
+                                    <div class="flex-1 h-2 rounded-full bg-surface-container-high overflow-hidden">
+                                        <div class="h-full rounded-full transition-all" :class="selectedArticle.severity >= 61 ? 'bg-error' : selectedArticle.severity >= 41 ? 'bg-tertiary' : selectedArticle.severity >= 21 ? 'bg-secondary' : 'bg-primary'" :style="{ width: (selectedArticle.severity ?? 0) + '%' }"></div>
+                                    </div>
+                                    <span class="text-sm font-bold text-on-surface">{{ selectedArticle.severity ?? '—' }}</span>
+                                </div>
+                            </div>
+                            <div class="bg-surface-container rounded-xl p-4">
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Confidence</p>
+                                <div class="flex items-center gap-2">
+                                    <div class="flex-1 h-2 rounded-full bg-surface-container-high overflow-hidden">
+                                        <div class="h-full rounded-full bg-primary transition-all" :style="{ width: (selectedArticle.confidence ?? 0) + '%' }"></div>
+                                    </div>
+                                    <span class="text-sm font-bold text-on-surface">{{ selectedArticle.confidence ?? '—' }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedArticle.reliability_score !== null" class="bg-surface-container rounded-xl p-4">
+                            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Skor Reliabilitas</p>
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 h-2 rounded-full bg-surface-container-high overflow-hidden">
+                                    <div class="h-full rounded-full transition-all" :class="selectedArticle.reliability_score >= 90 ? 'bg-primary' : selectedArticle.reliability_score >= 70 ? 'bg-secondary' : selectedArticle.reliability_score >= 40 ? 'bg-tertiary' : 'bg-error'" :style="{ width: (selectedArticle.reliability_score ?? 0) + '%' }"></div>
+                                </div>
+                                <span class="text-sm font-bold text-on-surface">{{ selectedArticle.reliability_score }}</span>
+                                <span class="text-xs text-on-surface-variant ml-1">({{ selectedArticle.reliability_level }})</span>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedArticle.cause" class="bg-surface-container rounded-xl p-4">
+                            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Penyebab</p>
+                            <p class="text-sm text-on-surface">{{ selectedArticle.cause }}</p>
+                        </div>
+                        <div v-if="selectedArticle.impact" class="bg-surface-container rounded-xl p-4">
+                            <p class="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Dampak</p>
+                            <p class="text-sm text-on-surface">{{ selectedArticle.impact }}</p>
+                        </div>
+                    </div>
+
+                    <div v-else class="bg-surface-container rounded-xl p-6 text-center">
+                        <span class="material-symbols-outlined text-[32px] block mb-2 text-on-surface-variant">hourglass_empty</span>
+                        <p class="text-sm text-on-surface-variant">Artikel belum dianalisis. Proses analisis akan berjalan setelah scraping selesai.</p>
+                    </div>
                 </div>
             </div>
         </Teleport>

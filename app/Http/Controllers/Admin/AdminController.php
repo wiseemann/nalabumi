@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\AnalyzeArticleJob;
+use App\Jobs\CalculateReliabilityJob;
+use App\Jobs\GenerateEmbeddingJob;
 use App\Jobs\ScrapeArticleJob;
 use App\Jobs\ScrapeUnscrapedArticlesJob;
 use App\Models\Article;
@@ -14,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 use App\Services\RssFeedService;
 
@@ -32,9 +35,11 @@ class AdminController extends Controller
 
         // Apply filter
         match ($filter) {
-            'pending' => $query->whereNull('is_verified'),
+            'pending' => $query->whereNull('is_verified')->where('is_analyzed', true),
             'verified' => $query->where('is_verified', true),
             'rejected' => $query->where('is_verified', false),
+            'unanalyzed' => $query->where('is_scraped', true)->where('is_analyzed', false),
+            'scrape_failed' => $query->where('scrape_failed', true),
             default => null,
         };
 
@@ -52,13 +57,21 @@ class AdminController extends Controller
             'url' => $article->url,
             'published_at' => $article->published_at?->format('d M Y, H:i'),
             'is_scraped' => $article->is_scraped,
+            'scrape_failed' => $article->scrape_failed,
             'is_analyzed' => $article->is_analyzed,
+            'has_embedding' => $article->has_embedding,
             'is_verified' => $article->is_verified,
             'verified_at' => $article->verified_at?->format('d M Y, H:i'),
             'categories' => $article->categories->pluck('name'),
             'locations' => $article->locations->map(fn($l) => $l->regency_name ?? $l->name),
             'severity' => $article->cases->first()?->severity,
             'confidence' => $article->cases->first()?->confidence,
+            'cause' => $article->cases->first()?->cause,
+            'impact' => $article->cases->first()?->impact,
+            'reliability_score' => $article->reliability_score,
+            'reliability_level' => $article->reliability_level,
+            'scraped_at' => $article->scraped_at?->format('d M Y, H:i'),
+            'analyzed_at' => $article->analyzed_at?->format('d M Y, H:i'),
         ]);
 
         // Overview stats
@@ -70,6 +83,8 @@ class AdminController extends Controller
             'unscraped' => Article::where('is_scraped', false)->where('scrape_failed', false)->count(),
             'scrape_failed' => Article::where('scrape_failed', true)->count(),
             'unanalyzed' => Article::where('is_scraped', true)->where('is_analyzed', false)->count(),
+            'no_embedding' => Article::where('is_analyzed', true)->where('has_embedding', false)->count(),
+            'no_reliability' => Article::where('is_analyzed', true)->whereNull('reliability_score')->count(),
             'totalCases' => EnvironmentalCase::count(),
             'totalLocations' => Location::countNormalizedLocationsWithCases(),
         ];
@@ -116,6 +131,59 @@ class AdminController extends Controller
         ]);
 
         return back()->with('success', "Artikel \"{$article->title}\" telah ditolak.");
+    }
+
+    /**
+     * Delete an article.
+     */
+    public function destroy(int $id)
+    {
+        $article = Article::findOrFail($id);
+        $title = $article->title;
+        $article->delete();
+
+        return back()->with('success', "Artikel \"{$title}\" telah dihapus.");
+    }
+
+    /**
+     * Bulk verify articles.
+     */
+    public function bulkVerify(Request $request)
+    {
+        $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer|exists:articles,id'])['ids'];
+        Article::whereIn('id', $ids)->update([
+            'is_verified' => true,
+            'verified_by' => Auth::id(),
+            'verified_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' artikel telah diverifikasi.');
+    }
+
+    /**
+     * Bulk reject articles.
+     */
+    public function bulkReject(Request $request)
+    {
+        $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer|exists:articles,id'])['ids'];
+        Article::whereIn('id', $ids)->update([
+            'is_verified' => false,
+            'verified_by' => Auth::id(),
+            'verified_at' => now(),
+        ]);
+
+        return back()->with('success', count($ids) . ' artikel telah ditolak.');
+    }
+
+    /**
+     * Bulk delete articles.
+     */
+    public function bulkDestroy(Request $request)
+    {
+        $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer|exists:articles,id'])['ids'];
+        Article::whereIn('id', $ids)->delete();
+
+        return back()->with('success', count($ids) . ' artikel telah dihapus.');
     }
 
     /**
@@ -212,61 +280,66 @@ class AdminController extends Controller
     }
 
     /**
-     * View queue status (scrape + analysis jobs).
+     * Dispatch embedding jobs for all analyzed articles without embeddings.
+     */
+    public function runEmbedding()
+    {
+        $articles = Article::where('is_analyzed', true)->where('has_embedding', false)->get();
+        $count = $articles->count();
+
+        if ($count === 0) {
+            return back()->with('info', 'Tidak ada artikel yang perlu diproses embedding.');
+        }
+
+        foreach ($articles as $article) {
+            GenerateEmbeddingJob::dispatch($article);
+        }
+
+        return back()->with('success', "{$count} artikel dikirim ke antrean embedding.");
+    }
+
+    /**
+     * Dispatch reliability calculation jobs for all analyzed articles without scores.
+     */
+    public function runReliability()
+    {
+        $articles = Article::where('is_analyzed', true)->whereNull('reliability_score')->get();
+        $count = $articles->count();
+
+        if ($count === 0) {
+            return back()->with('info', 'Tidak ada artikel yang perlu dihitung reliabilitasnya.');
+        }
+
+        foreach ($articles as $article) {
+            CalculateReliabilityJob::dispatch($article);
+        }
+
+        return back()->with('success', "{$count} artikel dikirim ke antrean reliabilitas.");
+    }
+
+    /**
+     * View queue status (all job types).
      */
     public function scrapeQueue(Request $request)
     {
         $type = $request->get('type', 'all');
+        $queueKey = 'queues:default';
 
-        $query = DB::table('jobs')->where('queue', 'default');
+        // Get all pending jobs from Redis
+        $rawJobs = Redis::lrange($queueKey, 0, -1) ?: [];
+        $allJobs = collect($rawJobs)
+            ->map(fn($raw) => $this->mapRedisJob($raw))
+            ->filter();
 
-        $recentJobs = (clone $query)
-            ->orderByDesc('created_at')
-            ->limit(50)
-            ->get()
-            ->map(function ($job) {
-                $payload = json_decode($job->payload, true);
-                $displayName = $payload['displayName'] ?? class_basename($payload['data']['commandName'] ?? 'Unknown');
+        $pending = $allJobs->count();
+        $counts = $allJobs->groupBy('job_type')->map->count();
 
-                $category = match (true) {
-                    str_contains($displayName, 'Scrape') => 'scrape',
-                    str_contains($displayName, 'Analyze') => 'analysis',
-                    str_contains($displayName, 'GenerateEmbedding') => 'analysis',
-                    str_contains($displayName, 'CalculateReliability') => 'analysis',
-                    default => 'other',
-                };
-
-                return [
-                    'id' => $job->id,
-                    'display_name' => $displayName,
-                    'category' => $category,
-                    'attempts' => $job->attempts,
-                    'available_at' => date('d M Y, H:i', $job->available_at),
-                    'created_at' => date('d M Y, H:i', $job->created_at),
-                ];
-            });
+        $recentJobs = $allJobs->sortByDesc('created_at')->values()->take(50);
 
         $filtered = match ($type) {
-            'scrape' => $recentJobs->where('category', 'scrape')->values(),
-            'analysis' => $recentJobs->where('category', 'analysis')->values(),
-            default => $recentJobs,
+            'all' => $recentJobs,
+            default => $recentJobs->where('job_type', $type)->values(),
         };
-
-        // Count by category from all pending jobs
-        $allPending = (clone $query)->orderByDesc('created_at')->get()->map(function ($job) {
-            $payload = json_decode($job->payload, true);
-            $displayName = $payload['displayName'] ?? class_basename($payload['data']['commandName'] ?? 'Unknown');
-            return match (true) {
-                str_contains($displayName, 'Scrape') => 'scrape',
-                str_contains($displayName, 'Analyze') => 'analysis',
-                str_contains($displayName, 'GenerateEmbedding') => 'analysis',
-                str_contains($displayName, 'CalculateReliability') => 'analysis',
-                default => 'other',
-            };
-        });
-
-        $totalScrape = $allPending->filter(fn($c) => $c === 'scrape')->count();
-        $totalAnalysis = $allPending->filter(fn($c) => $c === 'analysis')->count();
 
         $failedJobs = DB::table('failed_jobs')
             ->orderByDesc('failed_at')
@@ -283,13 +356,39 @@ class AdminController extends Controller
             });
 
         return response()->json([
-            'pending' => $query->count(),
-            'pending_scrape' => $totalScrape,
-            'pending_analysis' => $totalAnalysis,
+            'pending' => $pending,
+            'counts' => $counts,
             'failed' => DB::table('failed_jobs')->count(),
             'recentJobs' => $filtered,
             'failedJobs' => $failedJobs,
             'type' => $type,
         ]);
+    }
+
+    private function mapRedisJob(?string $raw): ?array
+    {
+        if (!$raw) return null;
+        $payload = json_decode($raw, true);
+        if (!$payload) return null;
+
+        $displayName = $payload['displayName'] ?? class_basename($payload['data']['commandName'] ?? 'Unknown');
+
+        $jobType = match (true) {
+            str_contains($displayName, 'ScrapeUnscraped') => 'scrape_unscraped',
+            str_contains($displayName, 'ScrapeArticle') => 'scrape',
+            str_contains($displayName, 'AnalyzeArticle') => 'analyze',
+            str_contains($displayName, 'GenerateEmbedding') => 'embedding',
+            str_contains($displayName, 'CalculateReliability') => 'reliability',
+            default => 'other',
+        };
+
+        return [
+            'id' => $payload['id'] ?? null,
+            'display_name' => $displayName,
+            'job_type' => $jobType,
+            'attempts' => $payload['attempts'] ?? 0,
+            'available_at' => isset($payload['availableAt']) ? date('d M Y, H:i', $payload['availableAt']) : '—',
+            'created_at' => isset($payload['createdAt']) ? date('d M Y, H:i', $payload['createdAt']) : '—',
+        ];
     }
 }

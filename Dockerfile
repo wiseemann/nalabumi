@@ -25,7 +25,7 @@ WORKDIR /app
 COPY . .
 
 # Install PHP dependencies
-RUN composer install --no-interaction --optimize-autoloader
+RUN composer install --no-interaction --optimize-autoloader --prefer-source
 
 # Install Node dependencies
 RUN npm install
