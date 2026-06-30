@@ -41,6 +41,10 @@ class AnalyticsController extends Controller
             ->having('cases_count', '>', 0)
             ->get();
 
+        $jakartaMunicipalities = [
+            'Jakarta Pusat', 'Jakarta Utara', 'Jakarta Barat', 'Jakarta Selatan', 'Jakarta Timur',
+        ];
+
         $topRegions = $allLocations
             ->groupBy(function ($loc) {
                 if (!empty($loc->regency_name)) {
@@ -50,12 +54,12 @@ class AnalyticsController extends Controller
                 } else {
                     $name = $loc->name;
                 }
-                return strtolower(trim(preg_replace('/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i', '', $name ?? '')));
+                return \App\Models\Location::normalizeName($name);
             })
             ->map(function ($group) {
                 $representative = $group->sortByDesc('cases_count')->first();
                 $totalCases = $group->sum('cases_count');
-                
+
                 // Get the highest urgency score among the group
                 $bestScore = $group->pluck('latestUrgencyScore')->filter()->sortByDesc('score')->first();
 
@@ -68,13 +72,26 @@ class AnalyticsController extends Controller
 
                 return $representative;
             })
+            ->flatMap(function ($representative, $normalizedKey) use ($jakartaMunicipalities) {
+                // Expand generic "jakarta" / "kota jakarta" into 5 specific municipalities
+                if (in_array($normalizedKey, ['jakarta', 'kota jakarta'], true)) {
+                    return collect($jakartaMunicipalities)->map(function ($municipality) use ($representative) {
+                        $clone = clone $representative;
+                        $clone->regency_name = $municipality;
+                        return $clone;
+                    });
+                }
+                return [$representative];
+            })
             ->sortByDesc('cases_count')
-            ->values(); // Return ALL, no limit(10)
+            ->values();
 
-        $dailyTrend = EnvironmentalCase::selectRaw('DATE(created_at) as date, COUNT(*) as count')
+        // Bug 4: Group by article's original publish date (not scrape/created date)
+        $dailyTrend = EnvironmentalCase::join('articles', 'cases.article_id', '=', 'articles.id')
+            ->selectRaw('DATE(articles.published_at) as date, COUNT(*) as count')
+            ->whereNotNull('articles.published_at')
             ->groupBy('date')
             ->orderBy('date')
-            ->limit(30)
             ->get();
 
         return Inertia::render('Analytics', [
