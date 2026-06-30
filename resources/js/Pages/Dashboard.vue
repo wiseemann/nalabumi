@@ -160,19 +160,6 @@ function getRegencyStatus(regencyName, provinceName = '') {
         }
     }
     
-    // 3. Province fallback (e.g. Kutai Kartanegara inherits Kalimantan Timur if no exact match)
-    if (provinceName) {
-        const pName = provinceName.toLowerCase().trim();
-        const pScoreData = provinceLookup.get(pName);
-        if (pScoreData) {
-            return {
-                level: pScoreData.level,
-                score: pScoreData.score,
-                caseCount: pScoreData.case_count,
-            };
-        }
-    }
-    
     return { level: 'Rendah', score: 0, caseCount: 0 };
 }
 
