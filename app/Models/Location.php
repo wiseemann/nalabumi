@@ -43,6 +43,11 @@ class Location extends Model
         });
     }
 
+    public static function normalizeName(?string $name): string
+    {
+        return strtolower(trim(preg_replace('/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i', '', $name ?? '')));
+    }
+
     /**
      * Menghitung total wilayah terdampak dengan cara yang sama persis seperti
      * algoritma peta di Dashboard (menyatukan Kabupaten/Kota menjadi 1 entitas).
@@ -57,7 +62,7 @@ class Location extends Model
             } else {
                 $name = $loc->name;
             }
-            return strtolower(trim(preg_replace('/^(?:Kabupaten|Kota Administrasi|Kota|Kecamatan)\s+/i', '', $name ?? '')));
+            return self::normalizeName($name);
         })->filter()->unique()->count();
     }
 

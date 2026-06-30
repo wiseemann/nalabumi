@@ -61,30 +61,47 @@ const dailyTrendChartOptions = {
         fontFamily: 'Inter, sans-serif',
     },
     colors: ['#436526'],
+    dataLabels: {
+        enabled: false,
+    },
+    markers: {
+        size: 0,
+        strokeWidth: 2,
+        hover: { size: 5, strokeWidth: 2 }
+    },
     fill: {
         type: 'gradient',
         gradient: {
             shadeIntensity: 1,
-            opacityFrom: 0.3,
+            opacityFrom: 0.4,
             opacityTo: 0.05,
             stops: [0, 100],
         },
     },
-    stroke: { curve: 'smooth', width: 2 },
+    stroke: { curve: 'smooth', width: 3 },
     xaxis: {
         categories: props.dailyTrend.map(t => {
             const d = new Date(t.date);
             return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
         }),
-        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#43493d' } },
+        labels: { 
+            style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#74796b' },
+            hideOverlappingLabels: true,
+            rotate: 0,
+        },
         axisBorder: { show: false },
         axisTicks: { show: false },
+        tickAmount: 8,
     },
     yaxis: {
-        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#43493d' } },
+        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#74796b' } },
     },
-    grid: { borderColor: '#e2e3da', strokeDashArray: 3 },
-    tooltip: { style: { fontFamily: 'Inter, sans-serif' } },
+    grid: { borderColor: '#e2e3da', strokeDashArray: 4 },
+    tooltip: { 
+        theme: 'light',
+        style: { fontFamily: 'Inter, sans-serif' },
+        y: { formatter: (val) => `${val} Kasus` }
+    },
 };
 
 const dailyTrendChartSeries = [{
@@ -99,21 +116,42 @@ const overviewCategoryChartOptions = {
         height: 280,
         toolbar: { show: false },
         fontFamily: 'Inter, sans-serif',
+        events: {
+            dataPointSelection: (event, chartContext, config) => {
+                const categoryId = props.casesByCategory[config.dataPointIndex]?.id;
+                if (categoryId) {
+                    router.visit(`/archive?category=${categoryId}&from=analytics`);
+                }
+            }
+        }
     },
     colors: ['#ba1a1a', '#a96300', '#745b00', '#ffb870', '#74796b'],
     plotOptions: { bar: { borderRadius: 4, columnWidth: '60%' } },
     xaxis: {
         categories: props.casesByCategory.map(c => c.name),
-        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '10px', colors: '#43493d' }, rotate: -45 },
+        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '10px', colors: '#60695b' }, rotate: -45 },
         axisBorder: { show: false },
         axisTicks: { show: false },
+        tooltip: { enabled: false }
     },
     yaxis: {
-        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#43493d' } },
+        labels: { style: { fontFamily: 'Inter, sans-serif', fontSize: '11px', colors: '#60695b' } },
     },
     grid: { borderColor: '#e2e3da', strokeDashArray: 3 },
     legend: { show: false },
-    tooltip: { style: { fontFamily: 'Inter, sans-serif' } },
+    tooltip: { 
+        theme: 'light',
+        style: { fontFamily: 'Inter, sans-serif' },
+        y: { formatter: (val) => `${val} Kasus` }
+    },
+    states: {
+        hover: {
+            filter: {
+                type: 'darken',
+                value: 0.9,
+            }
+        }
+    }
 };
 
 const overviewCategoryChartSeries = [{
@@ -184,11 +222,14 @@ const overviewCategoryChartSeries = [{
                 <!-- Charts dari Dashboard lama -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                     <div class="lg:col-span-2 bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-on-surface mb-4">Kasus Yang Teridentifikasi (per Hari)</h3>
+                        <h3 class="text-lg font-semibold text-on-surface mb-4">Tren Kasus Harian</h3>
                         <VueApexCharts type="area" height="280" :options="dailyTrendChartOptions" :series="dailyTrendChartSeries" />
                     </div>
                     <div class="bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-on-surface mb-4">Kasus per Kategori</h3>
+                        <h3 class="text-lg font-semibold text-on-surface mb-4 flex items-center justify-between">
+                            Kasus per Kategori
+                            <span class="text-xs font-normal text-on-surface-variant bg-surface-container px-2 py-1 rounded-md cursor-help" title="Klik pada grafik batang untuk melihat data spesifik">Bisa Diklik</span>
+                        </h3>
                         <VueApexCharts type="bar" height="280" :options="overviewCategoryChartOptions" :series="overviewCategoryChartSeries" />
                     </div>
                 </div>

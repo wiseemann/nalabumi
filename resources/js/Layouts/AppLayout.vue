@@ -36,7 +36,7 @@ const shouldShowFloatingChat = computed(() => {
                     </Link>
                     <Link href="/archive" :class="[route().current('archive') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
                         <span class="material-symbols-outlined text-[18px]">archive</span>
-                        Arsip
+                        Archive
                     </Link>
                     <Link href="/chat" :class="[route().current('chat') ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant hover:text-primary', 'py-4 font-semibold text-xs uppercase tracking-wider flex items-center gap-2 transition-colors']">
                         <span class="material-symbols-outlined text-[18px]">smart_toy</span>
@@ -63,7 +63,7 @@ const shouldShowFloatingChat = computed(() => {
             </Link>
             <Link href="/archive" @click="mobileMenuOpen = false" :class="[route().current('archive') ? 'bg-primary/10 text-primary border-l-4 border-primary' : 'text-on-surface hover:bg-surface-variant', 'px-6 py-4 font-semibold text-sm flex items-center gap-3 transition-colors']">
                 <span class="material-symbols-outlined text-[20px]">archive</span>
-                Arsip
+                Archive
             </Link>
             <Link href="/chat" @click="mobileMenuOpen = false" :class="[route().current('chat') ? 'bg-primary/10 text-primary border-l-4 border-primary' : 'text-on-surface hover:bg-surface-variant', 'px-6 py-4 font-semibold text-sm flex items-center gap-3 transition-colors']">
                 <span class="material-symbols-outlined text-[20px]">smart_toy</span>
