@@ -1,0 +1,52 @@
+# Stage 1: PHP dependencies
+FROM composer:latest AS vendor
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --optimize-autoloader \
+    --no-scripts
+
+# Stage 2: Frontend assets
+FROM node:22-alpine AS frontend
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Stage 3: PHP-FPM image
+FROM php:8.4-fpm-alpine
+
+RUN apk add --no-cache \
+    curl \
+    bash \
+    libpng-dev \
+    libxml2-dev \
+    oniguruma-dev \
+    zip \
+    unzip \
+    && docker-php-ext-install -j$(nproc) pdo_mysql gd bcmath mbstring dom xml simplexml \
+    && docker-php-ext-enable opcache
+
+RUN addgroup -S app && adduser -S app -G app
+
+COPY docker/php/php.ini /usr/local/etc/php/conf.d/app.ini
+COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+COPY docker/php/www.conf /usr/local/etc/php-fpm.d/www.conf
+
+COPY docker/php/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+COPY --chown=app:app . /app
+COPY --from=vendor --chown=app:app /app/vendor /app/vendor
+COPY --from=frontend --chown=app:app /app/public/build /app/public/build
+
+WORKDIR /app
+
+RUN php artisan storage:link || true
+
+EXPOSE 9000
+
+ENTRYPOINT ["/entrypoint.sh"]

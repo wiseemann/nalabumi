@@ -6,6 +6,7 @@ RUN apk add --no-cache \
     curl \
     libpng-dev \
     libxml2-dev \
+    oniguruma-dev \
     zip \
     unzip \
     nodejs \
@@ -13,7 +14,7 @@ RUN apk add --no-cache \
     bash \
     mariadb-client
 
-RUN docker-php-ext-install pdo_mysql gd bcmath
+RUN docker-php-ext-install pdo_mysql gd bcmath mbstring dom xml simplexml
 
 # Get Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -25,7 +26,7 @@ WORKDIR /app
 COPY . .
 
 # Install PHP dependencies
-RUN composer install --no-interaction --optimize-autoloader
+RUN composer install --no-interaction --optimize-autoloader 
 
 # Install Node dependencies
 RUN npm install

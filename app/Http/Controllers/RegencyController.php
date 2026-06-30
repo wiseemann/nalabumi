@@ -70,7 +70,7 @@ class RegencyController extends Controller
         }
 
         // Build case query with filters
-        $query = EnvironmentalCase::with(['article', 'category', 'location'])
+        $query = EnvironmentalCase::query()
             ->whereIn('location_id', $locationIds);
 
         if ($search) {

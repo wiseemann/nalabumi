@@ -28,9 +28,21 @@ class Location extends Model
         return $this->belongsToMany(Article::class);
     }
 
-    public function cases(): HasMany
+    public function cases()
     {
         return $this->hasMany(EnvironmentalCase::class);
+    }
+
+    /**
+     * Menghitung total wilayah terdampak dengan cara yang sama persis seperti
+     * algoritma peta di Dashboard (menyatukan Kabupaten/Kota menjadi 1 entitas).
+     */
+    public static function countNormalizedLocationsWithCases(): int
+    {
+        return self::has('cases')->get()->map(function ($loc) {
+            $name = $loc->regency_name ?: $loc->name;
+            return strtolower(trim(preg_replace('/^(Kabupaten|Kota|Kecamatan)\s+/i', '', $name ?? '')));
+        })->filter()->unique()->count();
     }
 
     public function urgencyScores(): HasMany

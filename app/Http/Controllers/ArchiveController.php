@@ -86,8 +86,9 @@ class ArchiveController extends Controller
 
     protected function buildArchiveQuery(Request $request)
     {
-        $query = Article::with(['categories', 'locations'])
+        $query = Article::with(['categories', 'locations', 'cases'])
             ->where('is_analyzed', true)
+            ->has('cases')
             ->orderByDesc('published_at');
 
         if ($request->filled('search')) {

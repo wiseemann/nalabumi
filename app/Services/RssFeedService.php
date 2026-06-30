@@ -117,6 +117,11 @@ class RssFeedService
             'url' => 'https://lapi.kumparan.com/v2.0/rss/',
             'source' => 'Kumparan',
         ],
+        // Bing News (General Stream for Automation)
+        [
+            'url' => 'https://www.bing.com/news/search?q=kerusakan+lingkungan+indonesia&format=rss&mkt=id-id',
+            'source' => 'Bing News',
+        ],
     ];
 
     public function fetchAll(): array
@@ -181,7 +186,7 @@ class RssFeedService
             }
 
             if ($i < count($keywords) - 1) {
-                usleep(500_000); // 500ms delay
+                usleep(2_000_000); // 2 seconds delay for safety against Bing's strict rate limits
             }
         }
 
@@ -258,6 +263,11 @@ class RssFeedService
         $description = (string) ($item->description ?? $item->summary ?? '');
         $pubDate = (string) ($item->pubDate ?? $item->published ?? $item->updated ?? '');
 
+        // Use intelligent source extraction if it's generic Bing News
+        if ($source === 'Bing News') {
+            $source = $this->extractSourceNameFromUrl($url, $source);
+        }
+
         $content = '';
         if (isset($item->children('http://purl.org/rss/1.0/modules/content/')->encoded)) {
             $content = (string) $item->children('http://purl.org/rss/1.0/modules/content/')->encoded;
@@ -292,6 +302,32 @@ class RssFeedService
     protected function cleanTitle(string $title): string
     {
         return trim(strip_tags($title));
+    }
+
+    protected function extractSourceNameFromUrl(string $url, string $defaultSource): string
+    {
+        // Extract original URL from Bing tracking link if applicable
+        $parsedUrl = parse_url($url);
+        if (isset($parsedUrl['query'])) {
+            parse_str($parsedUrl['query'], $queryParams);
+            if (isset($queryParams['url'])) {
+                $url = $queryParams['url'];
+            }
+        }
+        
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!$host) return $defaultSource;
+
+        $host = strtolower(trim(preg_replace('/^www\./', '', $host)));
+        $host = preg_replace('/^(news|m|bisnis|nasional|regional|megapolitan|finance|ekonomi|travel|otomotif)\./', '', $host);
+
+        $parts = explode('.', $host);
+        
+        if (count($parts) >= 3 && in_array($parts[count($parts)-2], ['co', 'go', 'ac', 'or', 'sch', 'web', 'net', 'my'])) {
+            return ucfirst($parts[count($parts)-3]);
+        }
+        
+        return ucfirst($parts[count($parts)-2] ?? $parts[0]);
     }
 
     protected function cleanText(string $text): string

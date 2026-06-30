@@ -27,6 +27,7 @@ Route::get('/chat', [ChatController::class, 'index'])->name('chat');
 Route::get('/regency', [RegencyController::class, 'index'])->name('regency');
 
 // Admin Authentication
+Route::redirect('/login', '/admin/login')->name('login');
 Route::get('/admin/login', [AuthController::class, 'showLogin'])->name('admin.login');
 Route::post('/admin/login', [AuthController::class, 'login'])->name('admin.login.submit');
 Route::post('/admin/logout', [AuthController::class, 'logout'])->name('admin.logout');
@@ -39,6 +40,14 @@ Route::middleware(['auth', \App\Http\Middleware\AdminMiddleware::class])->prefix
     Route::post('/articles/fetch-historical', [AdminController::class, 'fetchHistorical'])->name('admin.articles.fetch-historical');
     Route::patch('/articles/{id}/verify', [AdminController::class, 'verify'])->name('admin.articles.verify');
     Route::patch('/articles/{id}/reject', [AdminController::class, 'reject'])->name('admin.articles.reject');
+    Route::delete('/articles/{id}', [AdminController::class, 'destroy'])->name('admin.articles.destroy');
+    Route::post('/articles/bulk/verify', [AdminController::class, 'bulkVerify'])->name('admin.articles.bulk.verify');
+    Route::post('/articles/bulk/reject', [AdminController::class, 'bulkReject'])->name('admin.articles.bulk.reject');
+    Route::post('/articles/bulk/delete', [AdminController::class, 'bulkDestroy'])->name('admin.articles.bulk.delete');
+    Route::post('/scrape/run', [AdminController::class, 'runScrape'])->name('admin.scrape.run');
+    Route::get('/scrape/queue', [AdminController::class, 'scrapeQueue'])->name('admin.scrape.queue');
+    Route::post('/embedding/run', [AdminController::class, 'runEmbedding'])->name('admin.embedding.run');
+    Route::post('/reliability/run', [AdminController::class, 'runReliability'])->name('admin.reliability.run');
     
     // Media Reputations
     Route::get('/media-reputations', [MediaReputationController::class, 'index'])->name('admin.media-reputations.index');
