@@ -20,9 +20,10 @@ onMounted(() => {
             touchZoom: false
         }).setView([-0.7893, 113.9213], 3);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-            subdomains: 'abcd',
-            maxZoom: 20,
+        // Esri World Light Gray Base map tiles (free, no API key required)
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri',
+            maxZoom: 16,
         }).addTo(map);
     }
 });

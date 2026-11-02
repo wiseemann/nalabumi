@@ -185,6 +185,7 @@ PROMPT;
                 ->withHeaders([
                     'Content-Type' => 'application/json',
                     'Authorization' => "Bearer {$apiKey}",
+                    'x-opencode-session' => (string) \Illuminate\Support\Str::uuid(),
                 ])
                 ->post($apiUrl, [
                     'model' => env('OPENCODE_MODEL', 'deepseek-v4-flash'),

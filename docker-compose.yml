@@ -28,9 +28,6 @@ services:
     command: sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
 
   vite:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: nalabumi-app
     container_name: nalabumi-vite
     restart: unless-stopped
@@ -48,9 +45,6 @@ services:
     command: npm run dev -- --host 0.0.0.0
 
   queue:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: nalabumi-app
     container_name: nalabumi-queue
     restart: unless-stopped

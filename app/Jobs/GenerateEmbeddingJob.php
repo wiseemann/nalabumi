@@ -24,13 +24,13 @@ class GenerateEmbeddingJob implements ShouldQueue
     {
         $qdrantService->ensureCollection();
 
-        $embedding = $embeddingService->generateEmbedding($this->article);
+        $chunkEmbeddings = $embeddingService->generateChunkedEmbeddings($this->article);
 
-        if (!$embedding) {
+        if (empty($chunkEmbeddings)) {
             return;
         }
 
-        $payload = [
+        $basePayload = [
             'article_id' => $this->article->id,
             'title' => $this->article->title,
             'source' => $this->article->source,
@@ -46,11 +46,22 @@ class GenerateEmbeddingJob implements ShouldQueue
             })->toArray(),
         ];
 
-        $qdrantService->upsertPoint(
-            (int) $this->article->id,
-            $embedding,
-            $payload
-        );
+        $points = [];
+        foreach ($chunkEmbeddings as $chunk) {
+            $pointId = ((int) $this->article->id * 1000) + (int) $chunk['chunk_index'];
+            $payload = array_merge($basePayload, [
+                'chunk_index' => $chunk['chunk_index'],
+                'chunk_text' => $chunk['text'],
+            ]);
+
+            $points[] = [
+                'id' => $pointId,
+                'vector' => $chunk['vector'],
+                'payload' => $payload,
+            ];
+        }
+
+        $qdrantService->upsertPoints($points);
 
         CalculateReliabilityJob::dispatch($this->article);
     }

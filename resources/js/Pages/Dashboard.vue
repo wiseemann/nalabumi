@@ -60,14 +60,15 @@ function onMouseUp() {
 }
 
 const dateRanges = [
+    { label: 'Semua Waktu', value: 'all' },
     { label: 'Hari ini', value: '1' },
     { label: '7 hari', value: '7' },
     { label: '30 hari', value: '30' },
     { label: '1 tahun', value: '365' },
 ];
 
-const PROVINCE_URL = 'https://raw.githubusercontent.com/ardian28/GeoJson-Indonesia-38-Provinsi/main/Provinsi/38%20Provinsi%20Indonesia%20-%20Provinsi.json';
-const REGENCY_URL = 'https://raw.githubusercontent.com/ardian28/GeoJson-Indonesia-38-Provinsi/main/Kabupaten/38%20Provinsi%20Indonesia%20-%20Kabupaten.json';
+const PROVINCE_URL = '/data/indonesia-provinces.json';
+const REGENCY_URL = '/data/indonesia-regencies.json';
 
 const statusConfig = {
     'Rendah': { color: '#436526', fill: '#c6efa0', bg: 'rgba(67,101,38,0.08)', textColor: '#2f4f12', fillColor: '#8db86b', borderColor: '#3d5a28' },
@@ -93,47 +94,62 @@ function normalizeRegencyName(name) {
 
 const scoreLookup = new Map();
 const provinceLookup = new Map();
-watch(() => props.urgencyScores, (newScores) => {
+const dynamicScoresList = ref(props.urgencyScores || []);
+const isFiltering = ref(false);
+
+function populateLookups(scoresList) {
     scoreLookup.clear();
     provinceLookup.clear();
-    if (!newScores) return;
-    newScores.forEach(s => {
-        if (s.location?.regency_name) {
-            const rName = normalizeRegencyName(s.location.regency_name);
+    if (!scoresList) return;
+    scoresList.forEach(s => {
+        const regencyName = s.location?.regency_name || s.regency_name;
+        const name = s.location?.name || s.name;
+        const provinceName = s.location?.province_name || s.province_name;
+        const score = s.score ?? 0;
+        const level = s.level ?? 'Rendah';
+        const caseCount = s.case_count || 0;
+
+        if (regencyName) {
+            const rName = normalizeRegencyName(regencyName);
             if (scoreLookup.has(rName)) {
                 const existing = scoreLookup.get(rName);
-                existing.case_count += (s.case_count || 0);
-                if (s.score > existing.score) {
-                    existing.score = s.score;
-                    existing.level = s.level;
+                existing.case_count += caseCount;
+                if (score > existing.score) {
+                    existing.score = score;
+                    existing.level = level;
                 }
                 scoreLookup.set(rName, existing);
             } else {
-                scoreLookup.set(rName, { ...s });
+                scoreLookup.set(rName, { ...s, score, level, case_count: caseCount });
             }
-        } else if (s.location?.name) {
-            const rName = normalizeRegencyName(s.location.name);
+        } else if (name) {
+            const rName = normalizeRegencyName(name);
             if (!scoreLookup.has(rName)) {
-                scoreLookup.set(rName, { ...s });
+                scoreLookup.set(rName, { ...s, score, level, case_count: caseCount });
             }
         }
-        
+
         // Populate province fallback lookup for province-level scores
-        if (s.location?.province_name && !s.location?.regency_name) {
-            const pName = s.location.province_name.toLowerCase().trim();
+        if (provinceName && !regencyName) {
+            const pName = provinceName.toLowerCase().trim();
             if (provinceLookup.has(pName)) {
                 const existing = provinceLookup.get(pName);
-                existing.case_count += (s.case_count || 0);
-                if (s.score > existing.score) {
-                    existing.score = s.score;
-                    existing.level = s.level;
+                existing.case_count += caseCount;
+                if (score > existing.score) {
+                    existing.score = score;
+                    existing.level = level;
                 }
                 provinceLookup.set(pName, existing);
             } else {
-                provinceLookup.set(pName, { ...s });
+                provinceLookup.set(pName, { ...s, score, level, case_count: caseCount });
             }
         }
     });
+}
+
+watch(() => props.urgencyScores, (newScores) => {
+    dynamicScoresList.value = newScores || [];
+    populateLookups(dynamicScoresList.value);
 }, { immediate: true, deep: true });
 
 function getRegencyStatus(regencyName, provinceName = '') {
@@ -165,8 +181,7 @@ function getRegencyStatus(regencyName, provinceName = '') {
 
 // Compute real stats for the HUD
 const totalCases = computed(() => {
-    if (!props.urgencyScores) return 0;
-    return props.urgencyScores.reduce((sum, s) => sum + (s.case_count || 0), 0);
+    return dynamicScoresList.value.reduce((sum, s) => sum + (s.case_count || 0), 0);
 });
 
 const criticalRegions = computed(() => {
@@ -281,11 +296,16 @@ function initMap() {
     map.value.getPane('labelPane').style.zIndex = 300;
     map.value.getPane('labelPane').style.pointerEvents = 'none';
 
-    // Uber-style light map tiles with labels
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // Esri World Light Gray Base map tiles (free, no API key required)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+        maxZoom: 16,
+    }).addTo(map.value);
+
+    // Esri Reference Labels placed on top of polygons via labelPane
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        pane: 'labelPane',
+        maxZoom: 16,
     }).addTo(map.value);
 }
 
@@ -394,8 +414,55 @@ function resetView() {
     clearSelection();
 }
 
+async function applyFilters() {
+    isFiltering.value = true;
+    try {
+        const params = new URLSearchParams();
+        if (selectedCategory.value) {
+            params.append('category', selectedCategory.value);
+        }
+        if (selectedDateRange.value && selectedDateRange.value !== 'all') {
+            params.append('days', selectedDateRange.value);
+        }
+
+        const res = await fetch(`/api/urgency-scores?${params.toString()}`);
+        if (!res.ok) throw new Error(`Filter request failed: ${res.status}`);
+        const json = await res.json();
+        const data = json.data || [];
+
+        dynamicScoresList.value = data;
+        populateLookups(data);
+
+        // Update Leaflet layer styles across all regencies
+        if (regencyLayer.value) {
+            regencyLayer.value.eachLayer(layer => {
+                layer.setStyle(regencyStyle(layer.feature));
+            });
+        }
+
+        // If a region is actively inspected in bottom sheet, refresh its values
+        if (selectedRegion.value) {
+            const updated = getRegencyStatus(selectedRegion.value.regency, selectedRegion.value.province);
+            const sc = getStatusConfig(updated.level);
+            selectedRegion.value = {
+                ...selectedRegion.value,
+                level: updated.level,
+                score: updated.score,
+                caseCount: updated.caseCount,
+                color: sc.color,
+                bg: sc.bg,
+                textColor: sc.textColor,
+            };
+        }
+    } catch (err) {
+        console.error('Error applying filters:', err);
+    } finally {
+        isFiltering.value = false;
+    }
+}
+
 watch([selectedCategory, selectedDateRange], () => {
-    // Reload urgency data when filters change
+    applyFilters();
 });
 </script>
 
@@ -406,12 +473,42 @@ watch([selectedCategory, selectedDateRange], () => {
             <div ref="mapContainer" class="absolute inset-0 w-full h-full" style="z-index: 1;"></div>
 
             <!-- Top Header Brand HUD (Mobile Friendly) -->
-            <div class="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none" style="z-index: 40;">
-                <div class="glass-panel px-4 py-2.5 flex items-center gap-2 rounded-xl pointer-events-auto shadow-xl border border-outline-variant/40">
-                    <span class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
-                    <span class="text-sm font-bold text-slate-800 tracking-wider">NALABUMI MONITOR</span>
+            <div class="absolute top-4 left-4 right-4 flex flex-col md:flex-row md:items-center justify-between gap-2 pointer-events-none" style="z-index: 40;">
+                <div class="flex flex-wrap items-center gap-2 pointer-events-auto">
+                    <div class="glass-panel px-4 py-2.5 flex items-center gap-2 rounded-xl shadow-xl border border-outline-variant/40 bg-surface/90 backdrop-blur-md">
+                        <span class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
+                        <span class="text-sm font-bold text-slate-800 tracking-wider">NALABUMI MONITOR</span>
+                    </div>
+
+                    <!-- Category Filter Dropdown -->
+                    <div class="glass-panel px-3 py-2 flex items-center gap-1.5 rounded-xl shadow-xl border border-outline-variant/40 bg-surface/90 backdrop-blur-md text-xs font-semibold text-slate-700">
+                        <span class="material-symbols-outlined text-[18px] text-primary">filter_alt</span>
+                        <select v-model="selectedCategory" class="bg-transparent border-none text-xs font-semibold text-slate-800 focus:ring-0 cursor-pointer pr-5 py-0">
+                            <option :value="null">Semua Kategori</option>
+                            <option v-for="cat in props.categories" :key="cat.id" :value="cat.id">
+                                {{ cat.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Date Range Filter Dropdown -->
+                    <div class="glass-panel px-3 py-2 flex items-center gap-1.5 rounded-xl shadow-xl border border-outline-variant/40 bg-surface/90 backdrop-blur-md text-xs font-semibold text-slate-700">
+                        <span class="material-symbols-outlined text-[18px] text-primary">calendar_today</span>
+                        <select v-model="selectedDateRange" class="bg-transparent border-none text-xs font-semibold text-slate-800 focus:ring-0 cursor-pointer pr-5 py-0">
+                            <option v-for="range in dateRanges" :key="range.value" :value="range.value">
+                                {{ range.label }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Filter loading spinner -->
+                    <div v-if="isFiltering" class="glass-panel px-3 py-2 rounded-xl shadow-xl border border-outline-variant/40 bg-surface/90 flex items-center gap-1.5 text-xs text-primary font-medium">
+                        <span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                        <span class="hidden sm:inline">Memfilter...</span>
+                    </div>
                 </div>
-                <button @click="resetView" class="glass-panel px-4 py-2.5 flex items-center gap-1.5 rounded-xl pointer-events-auto shadow-xl hover:bg-black/5 transition-all border border-outline-variant/40 text-xs font-semibold text-slate-700">
+
+                <button @click="resetView" class="glass-panel px-4 py-2.5 flex items-center gap-1.5 rounded-xl pointer-events-auto shadow-xl hover:bg-black/5 transition-all border border-outline-variant/40 text-xs font-semibold text-slate-700 self-start md:self-auto">
                     <span class="material-symbols-outlined text-[16px]">restart_alt</span>
                     Reset Peta
                 </button>

@@ -17,34 +17,26 @@ class RagService
     /**
      * Answer a user's question with geographic context awareness.
      */
-    public function answerQuestion(string $question, ?string $locationHint = null): array
+    public function answerQuestion(string $question, ?string $locationHint = null, array $history = []): array
     {
-        $queryEmbedding = $this->embeddingService->queryEmbedding($question);
+        // Detect geographic context from the question, explicit location hint, or recent history
+        $detectedLocation = $this->detectLocation($question, $locationHint, $history);
 
-        if (!$queryEmbedding) {
-            return [
-                'answer' => 'Maaf, terjadi kesalahan dalam memproses pertanyaan Anda.',
-                'thought' => null,
-                'sources' => [],
-            ];
+        // 1. Try Vector Hybrid Search if embedding is available (Ollama)
+        $queryEmbedding = $this->embeddingService->queryEmbedding($question);
+        $searchResults = [];
+
+        if ($queryEmbedding) {
+            $searchResults = $this->hybridSearch($queryEmbedding, $detectedLocation);
         }
 
-        // Detect geographic context from the question or explicit location hint
-        $detectedLocation = $this->detectLocation($question, $locationHint);
-
-        // Use hybrid search: filtered (location-specific) + unfiltered (general)
-        $searchResults = $this->hybridSearch($queryEmbedding, $detectedLocation);
-
+        // 2. Fallback to SQL keyword search if vector search is unavailable or returns empty
         if (empty($searchResults)) {
-            return [
-                'answer' => 'Maaf, saya tidak menemukan informasi yang relevan dengan pertanyaan Anda dalam database.',
-                'thought' => null,
-                'sources' => [],
-            ];
+            $searchResults = $this->searchArticlesByKeyword($question, $detectedLocation);
         }
 
         $context = $this->buildContext($searchResults);
-        $generated = $this->generateAnswer($question, $context, $detectedLocation);
+        $generated = $this->generateAnswer($question, $context, $detectedLocation, $history);
         $sources = $this->extractSources($searchResults);
 
         return [
@@ -56,53 +48,212 @@ class RagService
     }
 
     /**
-     * Detect location from the user's question by matching against known regency/province names.
+     * Stream an answer using Server-Sent Events (yields event chunks).
+     *
+     * @return \Generator
      */
-    protected function detectLocation(string $question, ?string $locationHint): ?array
+    public function streamAnswer(string $question, ?string $locationHint = null, array $history = []): \Generator
+    {
+        // Detect location context
+        $detectedLocation = $this->detectLocation($question, $locationHint, $history);
+
+        // 1. Try Vector search if Ollama embedding is available
+        $queryEmbedding = $this->embeddingService->queryEmbedding($question);
+        $searchResults = [];
+
+        if ($queryEmbedding) {
+            $searchResults = $this->hybridSearch($queryEmbedding, $detectedLocation);
+        }
+
+        // 2. Fallback to SQL keyword search if vector search is unavailable (e.g. Ollama offline)
+        if (empty($searchResults)) {
+            $searchResults = $this->searchArticlesByKeyword($question, $detectedLocation);
+        }
+
+        $sources = $this->extractSources($searchResults);
+
+        // Yield metadata (detected location + sources) immediately so client UI can display them
+        yield [
+            'type' => 'meta',
+            'detected_location' => $detectedLocation,
+            'sources' => $sources,
+        ];
+
+        $context = $this->buildContext($searchResults);
+        $messages = $this->buildLlmMessages($question, $context, $detectedLocation, $history);
+
+        $apiUrl = config('services.opencode.api_url') ?? env('OPENCODE_API_URL');
+        $apiKey = config('services.opencode.api_key') ?? env('OPENCODE_API_KEY');
+        $model = config('services.opencode.model') ?? env('OPENCODE_MODEL', 'deepseek-v4-flash');
+
+        try {
+            $client = new \GuzzleHttp\Client();
+            $response = $client->post($apiUrl, [
+                'headers' => [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$apiKey}",
+                    'x-opencode-session' => (string) \Illuminate\Support\Str::uuid(),
+                ],
+                'json' => [
+                    'model' => $model,
+                    'messages' => $messages,
+                    'temperature' => 0.3,
+                    'max_tokens' => 2000,
+                    'stream' => true,
+                ],
+                'stream' => true,
+                'timeout' => 120,
+            ]);
+
+            $body = $response->getBody();
+
+            while (!$body->eof()) {
+                $line = \GuzzleHttp\Psr7\Utils::readLine($body);
+                $trimmed = trim($line);
+
+                if ($trimmed === '' || $trimmed === 'data: [DONE]') {
+                    if ($trimmed === 'data: [DONE]') {
+                        break;
+                    }
+                    continue;
+                }
+
+                if (str_starts_with($trimmed, 'data: ')) {
+                    $jsonStr = substr($trimmed, 6);
+                    $chunk = json_decode($jsonStr, true);
+
+                    if (json_last_error() === JSON_ERROR_NONE && isset($chunk['choices'][0]['delta'])) {
+                        $delta = $chunk['choices'][0]['delta'];
+
+                        $thoughtChunk = $delta['reasoning_content'] ?? $delta['reasoning'] ?? null;
+                        if (!empty($thoughtChunk)) {
+                            yield [
+                                'type' => 'thought',
+                                'delta' => $thoughtChunk,
+                            ];
+                        }
+
+                        if (isset($delta['content']) && $delta['content'] !== '') {
+                            yield [
+                                'type' => 'token',
+                                'delta' => $delta['content'],
+                            ];
+                        }
+                    }
+                }
+            }
+
+            yield ['type' => 'done'];
+
+        } catch (\Exception $e) {
+            Log::error("RAG streaming answer generation failed: {$e->getMessage()}");
+            yield [
+                'type' => 'error',
+                'message' => 'Maaf, terjadi kesalahan saat menghubungi layanan AI.',
+            ];
+            yield ['type' => 'done'];
+        }
+    }
+
+    /**
+     * Detect location from the user's question, location hint, or previous turns in conversation history.
+     */
+    protected function detectLocation(string $question, ?string $locationHint = null, array $history = []): ?array
     {
         $searchText = strtolower($question . ' ' . ($locationHint ?? ''));
 
-        // First try to match against known locations in the database
+        // Query distinct locations once
         $locations = Location::select('regency_name', 'province_name')
             ->distinct()
             ->get();
 
+        // 1. Try matching the current question & explicit hint
+        $matched = $this->matchLocationInText($searchText, $locations);
+        if ($matched) {
+            return $matched;
+        }
+
+        // 2. If no location found in current question, inspect recent conversation history in reverse order
+        if (!empty($history)) {
+            $reversedHistory = array_reverse($history);
+            foreach ($reversedHistory as $turn) {
+                $turnContent = strtolower($turn['content'] ?? '');
+                if (!empty($turnContent)) {
+                    $historyMatch = $this->matchLocationInText($turnContent, $locations);
+                    if ($historyMatch) {
+                        return $historyMatch;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Helper to match regency or province from a given text string using word boundaries and phrase safety.
+     */
+    protected function matchLocationInText(string $text, $locations): ?array
+    {
         $bestMatch = null;
         $bestMatchLength = 0;
+
+        // Contextual exclusions for homonyms / common phrases
+        // e.g. "batu bara" shouldn't trigger "Kota Batu" unless explicitly prefixed with "kota/kabupaten"
+        $ambiguousExclusions = [
+            'batu' => ['batu bara', 'batubara'],
+            'pekan' => ['pekan ini', 'pekan lalu', 'pekan depan', 'setiap pekan'],
+        ];
 
         foreach ($locations as $location) {
             // Check regency name
             if ($location->regency_name) {
                 $regencyLower = strtolower($location->regency_name);
-                // Try full name first, then without prefix
                 $variants = [$regencyLower];
 
                 // Generate variants without prefix (Kabupaten/Kota)
-                $stripped = preg_replace('/^(kabupaten|kota)\s+/i', '', $regencyLower);
-                if ($stripped !== $regencyLower) {
+                $stripped = trim(preg_replace('/^(kabupaten|kota administrasi|kota)\s+/iu', '', $regencyLower));
+                if ($stripped !== $regencyLower && mb_strlen($stripped) >= 3) {
                     $variants[] = $stripped;
                 }
 
                 foreach ($variants as $variant) {
-                    if (str_contains($searchText, $variant) && strlen($variant) > $bestMatchLength) {
+                    // Check ambiguous exclusions
+                    if (isset($ambiguousExclusions[$variant])) {
+                        $isExcluded = false;
+                        foreach ($ambiguousExclusions[$variant] as $exclusion) {
+                            if (str_contains($text, $exclusion) && !str_contains($text, 'kota ' . $variant) && !str_contains($text, 'kabupaten ' . $variant)) {
+                                $isExcluded = true;
+                                break;
+                            }
+                        }
+                        if ($isExcluded) {
+                            continue;
+                        }
+                    }
+
+                    // Strict word boundary matching
+                    $pattern = '/\b' . preg_quote($variant, '/') . '\b/iu';
+                    if (preg_match($pattern, $text) && mb_strlen($variant) > $bestMatchLength) {
                         $bestMatch = [
                             'regency' => $location->regency_name,
                             'province' => $location->province_name,
                         ];
-                        $bestMatchLength = strlen($variant);
+                        $bestMatchLength = mb_strlen($variant);
                     }
                 }
             }
 
-            // Check province name
+            // Check province name if no regency match yet
             if ($location->province_name && !$bestMatch) {
                 $provinceLower = strtolower($location->province_name);
-                if (str_contains($searchText, $provinceLower) && strlen($provinceLower) > $bestMatchLength) {
+                $pattern = '/\b' . preg_quote($provinceLower, '/') . '\b/iu';
+                if (preg_match($pattern, $text) && mb_strlen($provinceLower) > $bestMatchLength) {
                     $bestMatch = [
                         'regency' => null,
                         'province' => $location->province_name,
                     ];
-                    $bestMatchLength = strlen($provinceLower);
+                    $bestMatchLength = mb_strlen($provinceLower);
                 }
             }
         }
@@ -120,46 +271,65 @@ class RagService
         if ($detectedLocation) {
             // First: search with location filter
             $filter = $this->buildLocationFilter($detectedLocation);
-            $locationResults = $this->qdrantService->search($queryEmbedding, $limit, $filter);
+            $locationResults = $this->deduplicateByArticle($this->qdrantService->search($queryEmbedding, $limit * 2, $filter));
 
             // If we got enough location-specific results, return them
             if (count($locationResults) >= 3) {
-                // Fill remaining slots with general results (different articles)
-                $existingIds = array_map(fn($r) => $r['id'], $locationResults);
-                $generalResults = $this->qdrantService->search($queryEmbedding, $limit - count($locationResults));
+                $existingArticleIds = array_map(fn($r) => $r['payload']['article_id'] ?? $r['id'], $locationResults);
+                $generalResults = $this->deduplicateByArticle($this->qdrantService->search($queryEmbedding, $limit * 2));
 
-                // Merge, avoiding duplicates
+                // Merge, avoiding duplicate articles
                 foreach ($generalResults as $result) {
-                    if (!in_array($result['id'], $existingIds)) {
+                    $artId = $result['payload']['article_id'] ?? $result['id'];
+                    if (!in_array($artId, $existingArticleIds)) {
                         $locationResults[] = $result;
                         if (count($locationResults) >= $limit) break;
                     }
                 }
 
-                return $locationResults;
+                return array_slice($locationResults, 0, $limit);
             }
 
-            // If not enough location-specific results, fall back to general search
-            // but prepend whatever location results we found
-            $generalResults = $this->qdrantService->search($queryEmbedding, $limit);
-            $existingIds = array_map(fn($r) => $r['id'], $locationResults);
+            // Fallback: merge location results with general results
+            $generalResults = $this->deduplicateByArticle($this->qdrantService->search($queryEmbedding, $limit * 2));
+            $existingArticleIds = array_map(fn($r) => $r['payload']['article_id'] ?? $r['id'], $locationResults);
 
             foreach ($generalResults as $result) {
-                if (!in_array($result['id'], $existingIds)) {
+                $artId = $result['payload']['article_id'] ?? $result['id'];
+                if (!in_array($artId, $existingArticleIds)) {
                     $locationResults[] = $result;
                     if (count($locationResults) >= $limit) break;
                 }
             }
 
-            return $locationResults;
+            return array_slice($locationResults, 0, $limit);
         }
 
-        // No location detected: plain vector similarity search
-        return $this->qdrantService->search($queryEmbedding, $limit);
+        // No location detected: plain vector similarity search deduplicated by article
+        return array_slice($this->deduplicateByArticle($this->qdrantService->search($queryEmbedding, $limit * 2)), 0, $limit);
     }
 
     /**
-     * Build a Qdrant filter for location-based search.
+     * Deduplicate search results by article_id to avoid redundant chunks from the same article.
+     */
+    protected function deduplicateByArticle(array $results): array
+    {
+        $seen = [];
+        $unique = [];
+
+        foreach ($results as $res) {
+            $artId = $res['payload']['article_id'] ?? $res['id'];
+            if (!in_array($artId, $seen)) {
+                $seen[] = $artId;
+                $unique[] = $res;
+            }
+        }
+
+        return $unique;
+    }
+
+    /**
+     * Build Qdrant filter for location-based search.
      */
     protected function buildLocationFilter(array $location): array
     {
@@ -199,7 +369,10 @@ class RagService
             if ($articleId) {
                 $article = Article::with(['locations', 'categories'])->find($articleId);
                 if ($article) {
-                    $content = substr($article->content ?? $article->title ?? '', 0, 2000);
+                    // Prefer semantically matched chunk text if available, fallback to full content slice
+                    $matchedChunk = $payload['chunk_text'] ?? null;
+                    $content = $matchedChunk ?: substr($article->content ?? $article->title ?? '', 0, 2000);
+
                     $locations = $article->locations->map(fn($l) => $l->full_location)->join(', ');
                     $categories = $article->categories->pluck('name')->join(', ');
 
@@ -216,12 +389,11 @@ class RagService
         return implode("\n\n", $contextParts);
     }
 
-    protected function generateAnswer(string $question, string $context, ?array $detectedLocation): array
+    /**
+     * Build the structured message history and prompt for the LLM.
+     */
+    protected function buildLlmMessages(string $question, string $context, ?array $detectedLocation, array $history = []): array
     {
-        $apiUrl = config('services.opencode.api_url') ?? env('OPENCODE_API_URL');
-        $apiKey = config('services.opencode.api_key') ?? env('OPENCODE_API_KEY');
-        $model = config('services.opencode.model') ?? env('OPENCODE_MODEL', 'deepseek-v4-flash');
-
         $locationContext = '';
         if ($detectedLocation) {
             $parts = array_filter([$detectedLocation['regency'], $detectedLocation['province']]);
@@ -229,43 +401,73 @@ class RagService
             $locationContext = "\nKONTEKS GEOGRAFIS: Pertanyaan ini terkait dengan wilayah {$locationStr}. Prioritaskan informasi dari wilayah tersebut dalam jawaban Anda.";
         }
 
-        $prompt = <<<PROMPT
-Anda adalah asisten chatbot Nalabumi AI yang membantu menjawab pertanyaan tentang lingkungan di Indonesia berdasarkan data berita yang tersedia.
+        $systemPrompt = 'Anda adalah asisten Nalabumi AI yang ahli dalam isu dan kelestarian lingkungan di Indonesia. Jawab berdasarkan konteks berita yang diberikan secara akurat, lugas, dan terstruktur dalam Bahasa Indonesia.';
 
-JAWAB pertanyaan berikut berdasarkan KONTEKS yang diberikan. Jika informasi tidak ada dalam konteks, katakan bahwa Anda tidak memiliki informasi tersebut.
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => $systemPrompt,
+            ]
+        ];
+
+        // Include recent conversation turns (sanitized, max last 6 turns)
+        if (!empty($history)) {
+            $recentHistory = array_slice($history, -6);
+            foreach ($recentHistory as $turn) {
+                $role = in_array($turn['role'] ?? '', ['user', 'assistant']) ? $turn['role'] : null;
+                $content = trim($turn['content'] ?? '');
+                if ($role && $content) {
+                    $messages[] = [
+                        'role' => $role,
+                        'content' => mb_substr($content, 0, 1000),
+                    ];
+                }
+            }
+        }
+
+        $userPrompt = <<<PROMPT
+JAWAB pertanyaan berikut berdasarkan KONTEKS BERITA yang diberikan. Jika informasi tidak ada dalam konteks, katakan dengan jujur bahwa Anda tidak memiliki informasi tersebut dalam database saat ini.
 {$locationContext}
 
 PERTANYAAN: {$question}
 
-KONTEKS:
+KONTEKS BERITA:
 {$context}
 
 ATURAN JAWABAN:
-1. Berikan jawaban yang informatif, akurat, dan mudah dipahami dalam Bahasa Indonesia
-2. Sertakan referensi sumber berita jika relevan
-3. Jika pertanyaan tentang wilayah tertentu, fokuskan jawaban pada data dari wilayah tersebut
-4. Jika ada beberapa kasus di wilayah yang ditanya, berikan ringkasan terstruktur
-5. Sebutkan tingkat keparahan (severity) jika informasi tersedia
+1. Berikan jawaban yang informatif, akurat, dan mudah dipahami dalam Bahasa Indonesia.
+2. Sertakan referensi sumber berita atau data wilayah jika relevan.
+3. Jika pertanyaan tentang wilayah tertentu, fokuskan jawaban pada data dari wilayah tersebut.
+4. Jika ada beberapa kasus di wilayah yang ditanya, berikan ringkasan terstruktur berbentuk poin-poin.
+5. Sebutkan tingkat keparahan (severity) atau dampak kerusakan jika informasi tersedia.
 PROMPT;
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $userPrompt,
+        ];
+
+        return $messages;
+    }
+
+    protected function generateAnswer(string $question, string $context, ?array $detectedLocation, array $history = []): array
+    {
+        $apiUrl = config('services.opencode.api_url') ?? env('OPENCODE_API_URL');
+        $apiKey = config('services.opencode.api_key') ?? env('OPENCODE_API_KEY');
+        $model = config('services.opencode.model') ?? env('OPENCODE_MODEL', 'deepseek-v4-flash');
+
+        $messages = $this->buildLlmMessages($question, $context, $detectedLocation, $history);
 
         try {
             $response = Http::timeout(120)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
                     'Authorization' => "Bearer {$apiKey}",
+                    'x-opencode-session' => (string) \Illuminate\Support\Str::uuid(),
                 ])
                 ->post($apiUrl, [
                     'model' => $model,
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => 'Anda adalah asisten Nalabumi AI yang ahli dalam isu lingkungan Indonesia. Jawab berdasarkan konteks yang diberikan. Jawab dalam Bahasa Indonesia yang baik dan mudah dipahami.',
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => $prompt,
-                        ],
-                    ],
+                    'messages' => $messages,
                     'temperature' => 0.3,
                     'max_tokens' => 2000,
                 ]);
@@ -277,7 +479,7 @@ PROMPT;
             $data = $response->json();
             $message = $data['choices'][0]['message'] ?? [];
             $content = $message['content'] ?? 'Maaf, saya tidak dapat memproses jawaban.';
-            $thoughtProcess = $message['reasoning_content'] ?? null;
+            $thoughtProcess = $message['reasoning_content'] ?? $message['reasoning'] ?? null;
 
             if (!$thoughtProcess && preg_match('/<think>(.*?)<\/think>/is', $content, $matches)) {
                 $thoughtProcess = trim($matches[1]);
@@ -323,5 +525,81 @@ PROMPT;
         }
 
         return $sources;
+    }
+
+    /**
+     * Resilient SQL keyword search fallback when Ollama / vector embeddings are unavailable.
+     */
+    protected function searchArticlesByKeyword(string $question, ?array $detectedLocation): array
+    {
+        $stopWords = ['apa', 'apakah', 'bagaimana', 'dimana', 'kapan', 'siapa', 'mengapa', 'kenapa', 'di', 'ke', 'dari', 'yang', 'pada', 'adalah', 'ini', 'itu', 'dan', 'atau', 'untuk', 'dengan', 'tentang', 'terkait', 'tolong', 'jelaskan', 'ceritakan', 'berikan', 'kasus', 'berita', 'ada'];
+        $words = preg_split('/\s+/u', mb_strtolower($question), -1, PREG_SPLIT_NO_EMPTY);
+        $keywords = array_filter($words, fn($w) => mb_strlen($w) >= 3 && !in_array($w, $stopWords));
+
+        $query = Article::where('is_analyzed', true)
+            ->with(['locations', 'categories']);
+
+        if ($detectedLocation) {
+            $query->whereHas('locations', function ($q) use ($detectedLocation) {
+                if (!empty($detectedLocation['regency'])) {
+                    $q->where('regency_name', 'like', "%{$detectedLocation['regency']}%");
+                } elseif (!empty($detectedLocation['province'])) {
+                    $q->where('province_name', 'like', "%{$detectedLocation['province']}%");
+                }
+            });
+        }
+
+        if (!empty($keywords)) {
+            $query->where(function ($q) use ($keywords) {
+                foreach ($keywords as $kw) {
+                    $q->orWhere('title', 'like', "%{$kw}%")
+                      ->orWhere('content', 'like', "%{$kw}%");
+                }
+            });
+        }
+
+        $articles = $query->orderByDesc('published_at')->limit(5)->get();
+
+        // If location filter was too strict, fallback to matching keywords across all analyzed articles
+        if ($articles->isEmpty() && !empty($keywords)) {
+            $articles = Article::where('is_analyzed', true)
+                ->where(function ($q) use ($keywords) {
+                    foreach ($keywords as $kw) {
+                        $q->orWhere('title', 'like', "%{$kw}%")
+                          ->orWhere('content', 'like', "%{$kw}%");
+                    }
+                })
+                ->with(['locations', 'categories'])
+                ->orderByDesc('published_at')
+                ->limit(5)
+                ->get();
+        }
+
+        // If still empty (e.g. broad greeting or generic query), take the latest 3 prominent cases
+        if ($articles->isEmpty()) {
+            $articles = Article::where('is_analyzed', true)
+                ->has('cases')
+                ->with(['locations', 'categories'])
+                ->orderByDesc('published_at')
+                ->limit(3)
+                ->get();
+        }
+
+        $results = [];
+        foreach ($articles as $art) {
+            $results[] = [
+                'id' => $art->id,
+                'score' => 1.0,
+                'payload' => [
+                    'article_id' => $art->id,
+                    'title' => $art->title,
+                    'source' => $art->source,
+                    'url' => $art->url,
+                    'chunk_text' => mb_substr($art->content ?? $art->title ?? '', 0, 2000),
+                ],
+            ];
+        }
+
+        return $results;
     }
 }

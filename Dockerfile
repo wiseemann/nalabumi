@@ -1,12 +1,12 @@
 FROM php:8.4-cli-alpine
 
-# Install system dependencies and PHP extensions
+# Install PHP extension installer helper (fast pre-compiled binaries)
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+
+# Install system dependencies
 RUN apk add --no-cache \
     git \
     curl \
-    libpng-dev \
-    libxml2-dev \
-    oniguruma-dev \
     zip \
     unzip \
     nodejs \
@@ -14,7 +14,8 @@ RUN apk add --no-cache \
     bash \
     mariadb-client
 
-RUN docker-php-ext-install pdo_mysql gd bcmath mbstring dom xml simplexml
+# Install PHP extensions without slow manual source compilation
+RUN install-php-extensions pdo_mysql gd bcmath mbstring
 
 # Get Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

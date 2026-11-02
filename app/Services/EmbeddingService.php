@@ -8,26 +8,92 @@ use Illuminate\Support\Facades\Log;
 
 class EmbeddingService
 {
+    /**
+     * Chunk text into overlapping windows (in words) to preserve semantic coherence.
+     *
+     * @param string $text
+     * @param int $chunkWords Target word count per chunk (default ~250 words)
+     * @param int $overlapWords Overlapping word count between consecutive chunks (default ~50 words)
+     * @return array
+     */
+    public function chunkText(string $text, int $chunkWords = 250, int $overlapWords = 50): array
+    {
+        $words = preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY);
+        $totalWords = count($words);
+
+        if ($totalWords <= $chunkWords) {
+            return [trim($text)];
+        }
+
+        $chunks = [];
+        $i = 0;
+        $step = max(50, $chunkWords - $overlapWords);
+
+        while ($i < $totalWords) {
+            $slice = array_slice($words, $i, $chunkWords);
+            if (!empty($slice)) {
+                $chunks[] = implode(' ', $slice);
+            }
+            $i += $step;
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * Generate embeddings for article chunks with contextual metadata prefix.
+     *
+     * @param Article $article
+     * @return array Array of ['chunk_index' => int, 'text' => string, 'vector' => array]
+     */
+    public function generateChunkedEmbeddings(Article $article): array
+    {
+        $content = trim($article->content ?? $article->title ?? '');
+        if (empty($content)) {
+            Log::warning("No text to embed for article {$article->id}");
+            return [];
+        }
+
+        // Context header for contextual chunk retrieval
+        $categories = $article->categories->pluck('name')->join(', ');
+        $locations = $article->locations->map(fn($l) => $l->full_location)->join('; ');
+
+        $contextHeader = "Judul: {$article->title}";
+        if ($categories) $contextHeader .= " | Kategori: {$categories}";
+        if ($locations) $contextHeader .= " | Wilayah: {$locations}";
+
+        $rawChunks = $this->chunkText($content, 250, 50);
+        $results = [];
+
+        foreach ($rawChunks as $index => $rawChunk) {
+            // Contextual prefix ensures individual chunks carry the article title and locations
+            $textToEmbed = "{$contextHeader}\n\n{$rawChunk}";
+
+            try {
+                $vector = $this->callEmbeddingApi($textToEmbed);
+                if (!empty($vector)) {
+                    $results[] = [
+                        'chunk_index' => $index,
+                        'text' => $rawChunk,
+                        'vector' => $vector,
+                    ];
+                }
+            } catch (\Exception $e) {
+                Log::error("Embedding failed for article {$article->id} chunk {$index}: {$e->getMessage()}");
+            }
+        }
+
+        if (!empty($results)) {
+            $article->update(['has_embedding' => true]);
+        }
+
+        return $results;
+    }
+
     public function generateEmbedding(Article $article): ?array
     {
-        $text = $this->prepareText($article);
-
-        if (empty($text)) {
-            Log::warning("No text to embed for article {$article->id}");
-            return null;
-        }
-
-        try {
-            $embedding = $this->callEmbeddingApi($text);
-
-            $article->update(['has_embedding' => true]);
-
-            return $embedding;
-
-        } catch (\Exception $e) {
-            Log::error("Embedding generation failed for article {$article->id}: {$e->getMessage()}");
-            return null;
-        }
+        $chunked = $this->generateChunkedEmbeddings($article);
+        return $chunked[0]['vector'] ?? null;
     }
 
     protected function prepareText(Article $article): string

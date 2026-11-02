@@ -47,23 +47,96 @@ function toggleChat() {
 async function sendMessage() {
     if (!question.value.trim() || isLoading.value) return;
 
-    const currentQuestion = question.value;
-    messages.value.push({ role: 'user', content: currentQuestion });
+    const userText = question.value.trim();
+    // Prepare conversation history
+    const historyPayload = messages.value
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+        .slice(-6)
+        .map(m => ({ role: m.role, content: m.content }));
+
+    messages.value.push({ role: 'user', content: userText });
     question.value = '';
     
     isLoading.value = true;
     scrollToBottom();
 
+    // Prepare assistant message slot
+    const assistantIndex = messages.value.length;
+    messages.value.push({
+        role: 'assistant',
+        content: '',
+        thought: null,
+        sources: [],
+    });
+
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: currentQuestion }),
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+            },
+            body: JSON.stringify({ 
+                question: userText,
+                history: historyPayload,
+                stream: true
+            }),
         });
-        const data = await response.json();
-        messages.value.push({ role: 'assistant', content: data.answer, thought: data.thought, sources: data.sources });
+
+        if (!response.ok && response.status === 429) {
+            messages.value[assistantIndex].content = 'Anda terlalu sering bertanya. Silakan tunggu sebentar.';
+            return;
+        }
+
+        if (!response.body) {
+            throw new Error('ReadableStream not supported.');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
+                const jsonStr = trimmed.slice(6);
+                if (jsonStr === '[DONE]') continue;
+
+                try {
+                    const data = JSON.parse(jsonStr);
+                    if (data.type === 'meta') {
+                        if (data.sources) {
+                            messages.value[assistantIndex].sources = data.sources;
+                        }
+                    } else if (data.type === 'thought') {
+                        if (!messages.value[assistantIndex].thought) {
+                            messages.value[assistantIndex].thought = '';
+                        }
+                        messages.value[assistantIndex].thought += data.delta;
+                    } else if (data.type === 'token') {
+                        messages.value[assistantIndex].content += data.delta;
+                        scrollToBottom();
+                    } else if (data.type === 'error') {
+                        messages.value[assistantIndex].content = data.message || 'Maaf, terjadi kesalahan.';
+                    }
+                } catch (parseErr) {
+                    console.error('Error parsing SSE chunk', parseErr);
+                }
+            }
+        }
     } catch (e) {
-        messages.value.push({ role: 'assistant', content: 'Maaf, terjadi kesalahan.' });
+        console.error('Floating chat error:', e);
+        if (!messages.value[assistantIndex].content) {
+            messages.value[assistantIndex].content = 'Maaf, terjadi kesalahan.';
+        }
     } finally {
         isLoading.value = false;
         scrollToBottom();
@@ -132,45 +205,51 @@ function cancelClearChat() {
                     </div>
 
                     <div v-else class="flex flex-col gap-4">
-                        <div v-for="(msg, i) in messages" :key="i" class="flex w-full" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                            
-                            <!-- User Message -->
-                            <div v-if="msg.role === 'user'" class="max-w-[85%] bg-primary text-on-primary rounded-xl rounded-br-sm px-4 py-2.5 shadow-sm text-sm">
-                                {{ msg.content }}
-                            </div>
+                        <template v-for="(msg, i) in messages" :key="i">
+                            <div v-if="msg.role === 'user' || msg.content || msg.thought" 
+                                class="flex w-full" 
+                                :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                                
+                                <!-- User Message -->
+                                <div v-if="msg.role === 'user'" class="max-w-[85%] bg-primary text-on-primary rounded-xl rounded-br-sm px-4 py-2.5 shadow-sm text-sm">
+                                    {{ msg.content }}
+                                </div>
 
-                            <!-- AI Message -->
-                            <div v-else class="max-w-[90%] flex flex-col gap-1.5">
-                                <details v-if="msg.thought" class="group bg-surface-container border border-outline-variant/40 rounded-lg px-3 py-1.5 shadow-sm cursor-pointer w-fit max-w-full">
-                                    <summary class="flex items-center gap-1.5 text-[10px] font-semibold text-on-surface-variant uppercase outline-none select-none">
-                                        <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
-                                        Proses Berpikir
-                                    </summary>
-                                    <div class="mt-2 pt-2 border-t border-outline-variant/30 text-[11px] text-on-surface-variant/80 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-                                        {{ msg.thought }}
+                                <!-- AI Message -->
+                                <div v-else class="max-w-[90%] flex flex-col gap-1.5">
+                                    <details v-if="msg.thought" :open="isLoading && i === messages.length - 1 && !msg.content" class="group bg-surface-container border border-outline-variant/40 rounded-lg px-3 py-1.5 shadow-sm cursor-pointer w-fit max-w-full">
+                                        <summary class="flex items-center gap-1.5 text-[10px] font-semibold text-on-surface-variant uppercase outline-none select-none">
+                                            <span class="material-symbols-outlined text-[14px] transition-transform group-open:rotate-90">chevron_right</span>
+                                            Proses Berpikir
+                                            <span v-if="isLoading && i === messages.length - 1 && !msg.content" class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-ping ml-1"></span>
+                                        </summary>
+                                        <div class="mt-2 pt-2 border-t border-outline-variant/30 text-[11px] text-on-surface-variant/80 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                                            {{ msg.thought }}
+                                        </div>
+                                    </details>
+
+                                    <div v-if="msg.content" class="bg-surface-container-lowest border border-outline-variant/60 rounded-xl rounded-bl-sm px-4 py-3 shadow-sm text-sm text-on-surface">
+                                        <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5" v-html="renderMarkdown(msg.content)"></div>
+                                        <span v-if="isLoading && i === messages.length - 1" class="inline-block w-1.5 h-3.5 ml-1 bg-primary animate-pulse align-middle"></span>
                                     </div>
-                                </details>
 
-                                <div class="bg-surface-container-lowest border border-outline-variant/60 rounded-xl rounded-bl-sm px-4 py-3 shadow-sm text-sm text-on-surface">
-                                    <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5" v-html="renderMarkdown(msg.content)"></div>
-                                </div>
-
-                                <!-- Sources -->
-                                <div v-if="msg.sources?.length" class="flex flex-wrap gap-1.5 mt-0.5">
-                                    <a v-for="s in msg.sources" :key="s.id" :href="s.url" target="_blank"
-                                        class="inline-flex items-center gap-1 px-2 py-1 rounded bg-secondary-container/30 border border-secondary-container/50 text-secondary text-[10px] font-medium transition-colors hover:bg-secondary-container/50 truncate max-w-[150px]">
-                                        <span class="material-symbols-outlined text-[12px] shrink-0">public</span>
-                                        <span class="truncate">{{ s.source }}</span>
-                                    </a>
+                                    <!-- Sources -->
+                                    <div v-if="msg.sources?.length" class="flex flex-wrap gap-1.5 mt-0.5">
+                                        <a v-for="s in msg.sources" :key="s.id" :href="s.url" target="_blank"
+                                            class="inline-flex items-center gap-1 px-2 py-1 rounded bg-secondary-container/30 border border-secondary-container/50 text-secondary text-[10px] font-medium transition-colors hover:bg-secondary-container/50 truncate max-w-[150px]">
+                                            <span class="material-symbols-outlined text-[12px] shrink-0">public</span>
+                                            <span class="truncate">{{ s.source }}</span>
+                                        </a>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </template>
 
                         <!-- Loading -->
-                        <div v-if="isLoading" class="max-w-[85%]">
+                        <div v-if="isLoading && (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thought)" class="max-w-[85%]">
                             <div class="bg-surface-container border border-outline-variant/60 rounded-xl rounded-bl-sm px-4 py-2.5 shadow-sm flex items-center gap-2 h-10 w-fit">
                                 <span class="material-symbols-outlined text-primary text-[16px] animate-spin">progress_activity</span>
-                                <span class="text-xs text-on-surface-variant font-medium">Sedang berpikir...</span>
+                                <span class="text-xs text-on-surface-variant font-medium">Sedang menganalisis & mencari data...</span>
                             </div>
                         </div>
                     </div>

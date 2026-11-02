@@ -35,9 +35,15 @@ async function scrollToBottom() {
 async function sendMessage() {
     if (!question.value.trim() || isLoading.value) return;
 
-    const userMessage = { role: 'user', content: question.value };
+    const userText = question.value.trim();
+    // Prepare recent conversation history turns (max 6 turns)
+    const historyPayload = messages.value
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+        .slice(-6)
+        .map(m => ({ role: m.role, content: m.content }));
+
+    const userMessage = { role: 'user', content: userText };
     messages.value.push(userMessage);
-    const currentQuestion = question.value;
     
     question.value = '';
     if (textareaRef.value) {
@@ -47,21 +53,83 @@ async function sendMessage() {
     isLoading.value = true;
     scrollToBottom();
 
+    // Prepare assistant message slot for streaming
+    const assistantIndex = messages.value.length;
+    messages.value.push({
+        role: 'assistant',
+        content: '',
+        thought: null,
+        sources: [],
+    });
+
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: currentQuestion }),
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+            },
+            body: JSON.stringify({ 
+                question: userText,
+                history: historyPayload,
+                stream: true
+            }),
         });
-        const data = await response.json();
-        messages.value.push({
-            role: 'assistant',
-            content: data.answer || 'Maaf, saya tidak dapat memproses jawaban saat ini.',
-            thought: data.thought || null,
-            sources: data.sources || [],
-        });
+
+        if (!response.ok && response.status === 429) {
+            messages.value[assistantIndex].content = 'Anda terlalu sering bertanya. Silakan tunggu sebentar sebelum mencoba lagi.';
+            return;
+        }
+
+        if (!response.body) {
+            throw new Error('ReadableStream not supported.');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Retain remainder line
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
+                const jsonStr = trimmed.slice(6);
+                if (jsonStr === '[DONE]') continue;
+
+                try {
+                    const data = JSON.parse(jsonStr);
+                    if (data.type === 'meta') {
+                        if (data.sources) {
+                            messages.value[assistantIndex].sources = data.sources;
+                        }
+                    } else if (data.type === 'thought') {
+                        if (!messages.value[assistantIndex].thought) {
+                            messages.value[assistantIndex].thought = '';
+                        }
+                        messages.value[assistantIndex].thought += data.delta;
+                    } else if (data.type === 'token') {
+                        messages.value[assistantIndex].content += data.delta;
+                        scrollToBottom();
+                    } else if (data.type === 'error') {
+                        messages.value[assistantIndex].content = data.message || 'Maaf, terjadi kesalahan.';
+                    }
+                } catch (parseErr) {
+                    console.error('Error parsing SSE chunk', parseErr);
+                }
+            }
+        }
     } catch (e) {
-        messages.value.push({ role: 'assistant', content: 'Maaf, terjadi kesalahan. Silakan coba lagi.' });
+        console.error('Chat request error', e);
+        if (!messages.value[assistantIndex].content) {
+            messages.value[assistantIndex].content = 'Maaf, terjadi kesalahan saat menghubungi asisten AI. Silakan coba lagi.';
+        }
     } finally {
         isLoading.value = false;
         scrollToBottom();
@@ -160,52 +228,58 @@ function cancelClearChat() {
                             </button>
                         </div>
 
-                        <div v-for="(msg, i) in messages" :key="i" class="flex w-full animate-fade-in-up" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                            
-                            <!-- User Message -->
-                            <div v-if="msg.role === 'user'" 
-                                class="max-w-[85%] md:max-w-[75%] bg-primary text-on-primary rounded-2xl rounded-tr-sm px-5 py-3.5 shadow-sm">
-                                <p class="text-[15px] leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
-                            </div>
-
-                            <!-- AI Message -->
-                            <div v-else class="flex items-start gap-4 max-w-[95%] md:max-w-[85%]">
-                                <div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center shrink-0 shadow-sm border border-primary-fixed-dim overflow-hidden p-2">
-                                    <img :src="'/favicon.svg'" alt="Nalabumi AI" class="w-full h-full object-contain" />
+                        <template v-for="(msg, i) in messages" :key="i">
+                            <div v-if="msg.role === 'user' || msg.content || msg.thought" 
+                                class="flex w-full animate-fade-in-up" 
+                                :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                                
+                                <!-- User Message -->
+                                <div v-if="msg.role === 'user'" 
+                                    class="max-w-[85%] md:max-w-[75%] bg-primary text-on-primary rounded-2xl rounded-tr-sm px-5 py-3.5 shadow-sm">
+                                    <p class="text-[15px] leading-relaxed whitespace-pre-wrap">{{ msg.content }}</p>
                                 </div>
-                                <div class="flex flex-col gap-2 w-full min-w-0">
-                                    
-                                    <!-- Thought Process -->
-                                    <details v-if="msg.thought" class="group bg-surface-container border border-outline-variant/40 rounded-2xl px-4 py-2.5 shadow-sm cursor-pointer mb-1 w-fit max-w-full">
-                                        <summary class="flex items-center gap-2 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider outline-none select-none">
-                                            <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
-                                            Proses Berpikir
-                                        </summary>
-                                        <div class="mt-3 pt-3 border-t border-outline-variant/30 text-[13px] text-on-surface-variant/80 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto custom-scrollbar">
-                                            {{ msg.thought }}
+
+                                <!-- AI Message -->
+                                <div v-else class="flex items-start gap-4 max-w-[95%] md:max-w-[85%]">
+                                    <div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center shrink-0 shadow-sm border border-primary-fixed-dim overflow-hidden p-2">
+                                        <img :src="'/favicon.svg'" alt="Nalabumi AI" class="w-full h-full object-contain" />
+                                    </div>
+                                    <div class="flex flex-col gap-2 w-full min-w-0">
+                                        
+                                        <!-- Thought Process -->
+                                        <details v-if="msg.thought" :open="isLoading && i === messages.length - 1 && !msg.content" class="group bg-surface-container border border-outline-variant/40 rounded-2xl px-4 py-2.5 shadow-sm cursor-pointer mb-1 w-fit max-w-full">
+                                            <summary class="flex items-center gap-2 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider outline-none select-none">
+                                                <span class="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">chevron_right</span>
+                                                Proses Berpikir
+                                                <span v-if="isLoading && i === messages.length - 1 && !msg.content" class="inline-block w-2 h-2 rounded-full bg-primary animate-ping ml-1"></span>
+                                            </summary>
+                                            <div class="mt-3 pt-3 border-t border-outline-variant/30 text-[13px] text-on-surface-variant/80 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto custom-scrollbar">
+                                                {{ msg.thought }}
+                                            </div>
+                                        </details>
+
+                                        <div v-if="msg.content" class="bg-surface-container-lowest border border-outline-variant/60 rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm">
+                                            <div class="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 text-on-surface break-words" 
+                                                v-html="renderMarkdown(msg.content)"></div>
+                                            <span v-if="isLoading && i === messages.length - 1" class="inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse align-middle"></span>
                                         </div>
-                                    </details>
-
-                                    <div class="bg-surface-container-lowest border border-outline-variant/60 rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm">
-                                        <div class="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 text-on-surface break-words" 
-                                            v-html="renderMarkdown(msg.content)"></div>
-                                    </div>
-                                    
-                                    <!-- Sources -->
-                                    <div v-if="msg.sources?.length" class="flex flex-wrap gap-2 mt-1">
-                                        <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider py-1">Sumber:</span>
-                                        <a v-for="s in msg.sources" :key="s.id" :href="s.url" target="_blank"
-                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary-container/30 border border-secondary-container/50 hover:bg-secondary-container/50 text-secondary text-xs font-medium transition-colors max-w-full">
-                                            <span class="material-symbols-outlined text-[14px] shrink-0">public</span>
-                                            <span class="truncate max-w-[200px]">{{ s.source }}</span>
-                                        </a>
+                                        
+                                        <!-- Sources -->
+                                        <div v-if="msg.sources?.length" class="flex flex-wrap gap-2 mt-1">
+                                            <span class="text-xs font-semibold text-on-surface-variant uppercase tracking-wider py-1">Sumber:</span>
+                                            <a v-for="s in msg.sources" :key="s.id" :href="s.url" target="_blank"
+                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary-container/30 border border-secondary-container/50 hover:bg-secondary-container/50 text-secondary text-xs font-medium transition-colors max-w-full">
+                                                <span class="material-symbols-outlined text-[14px] shrink-0">public</span>
+                                                <span class="truncate max-w-[200px]">{{ s.source }}</span>
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </template>
 
                         <!-- Loading Indicator -->
-                        <div v-if="isLoading" class="flex items-start gap-4 max-w-[90%] md:max-w-[85%] animate-fade-in-up">
+                        <div v-if="isLoading && (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thought)" class="flex items-start gap-4 max-w-[90%] md:max-w-[85%] animate-fade-in-up">
                             <div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center shrink-0 shadow-sm border border-primary-fixed-dim overflow-hidden p-2">
                                 <img :src="'/favicon.svg'" alt="Nalabumi AI" class="w-full h-full object-contain animate-pulse" />
                             </div>

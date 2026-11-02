@@ -201,6 +201,37 @@ class RssFeedService
     }
 
     /**
+     * Fetch news articles on-demand by a specific topic / search query (e.g. "karhutla di kalimantan").
+     */
+    public function fetchByTopic(string $query): array
+    {
+        $encodedQuery = urlencode($query);
+        $articles = [];
+
+        // 1. Fetch from Bing News RSS
+        try {
+            $bingUrl = "https://www.bing.com/news/search?q={$encodedQuery}&format=rss&mkt=id-id";
+            $bingArticles = $this->fetchFeed($bingUrl, 'Bing News');
+            $articles = array_merge($articles, $bingArticles);
+            Log::info("Fetched " . count($bingArticles) . " articles from Bing News for query: {$query}");
+        } catch (\Exception $e) {
+            Log::error("Failed fetching topic from Bing News: {$e->getMessage()}");
+        }
+
+        // 2. Fetch from Google News RSS
+        try {
+            $googleUrl = "https://news.google.com/rss/search?q={$encodedQuery}&hl=id&gl=ID&ceid=ID:id";
+            $googleArticles = $this->fetchFeed($googleUrl, 'Google News');
+            $articles = array_merge($articles, $googleArticles);
+            Log::info("Fetched " . count($googleArticles) . " articles from Google News for query: {$query}");
+        } catch (\Exception $e) {
+            Log::error("Failed fetching topic from Google News: {$e->getMessage()}");
+        }
+
+        return $this->storeArticles($articles);
+    }
+
+    /**
      * Check if an article is likely about environmental issues.
      */
     protected function isEnvironmentalArticle(array $article): bool
@@ -258,7 +289,22 @@ class RssFeedService
 
     protected function extractArticleData(SimpleXMLElement $item, string $source): array
     {
-        $url = (string) ($item->link ?? '');
+        $url = trim((string) ($item->link ?? ''));
+
+        // Unwrap original destination URL from Bing News redirect if present
+        $parsedUrl = parse_url($url);
+        if (isset($parsedUrl['query'])) {
+            parse_str($parsedUrl['query'], $queryParams);
+            if (!empty($queryParams['url'])) {
+                $url = trim($queryParams['url']);
+            }
+        }
+
+        // Ensure URL fits within the database column limit (768 characters)
+        if (strlen($url) > 768) {
+            $url = substr($url, 0, 768);
+        }
+
         $title = (string) ($item->title ?? '');
         $description = (string) ($item->description ?? $item->summary ?? '');
         $pubDate = (string) ($item->pubDate ?? $item->published ?? $item->updated ?? '');
@@ -372,7 +418,7 @@ class RssFeedService
                 ['url' => $articleData['url']],
                 [
                     'title' => $articleData['title'],
-                    'content' => $articleData['content'] ?: null,
+                    'content' => !empty($articleData['content']) ? $articleData['content'] : (!empty($articleData['description']) ? $articleData['description'] : null),
                     'published_at' => $articleData['published_at'],
                     'source' => $articleData['source'],
                     'author' => $articleData['author'] ?: null,

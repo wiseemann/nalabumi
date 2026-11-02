@@ -53,24 +53,37 @@ class QdrantService
 
     public function upsertPoint(int|string $id, array $vector, array $payload): bool
     {
-        $pointId = is_numeric($id) ? (int) $id : $id;
-
-        $body = json_encode([
-            'points' => [
-                [
-                    'id' => $pointId,
-                    'vector' => $vector,
-                    'payload' => $payload,
-                ],
+        return $this->upsertPoints([
+            [
+                'id' => $id,
+                'vector' => $vector,
+                'payload' => $payload,
             ],
         ]);
+    }
+
+    public function upsertPoints(array $points): bool
+    {
+        if (empty($points)) {
+            return true;
+        }
+
+        $formattedPoints = array_map(function ($point) {
+            return [
+                'id' => is_numeric($point['id']) ? (int) $point['id'] : $point['id'],
+                'vector' => $point['vector'],
+                'payload' => $point['payload'] ?? [],
+            ];
+        }, $points);
+
+        $body = json_encode(['points' => $formattedPoints]);
 
         $response = Http::withHeaders(['Content-Type' => 'application/json'])
             ->withBody($body)
             ->put("{$this->host}/collections/{$this->collection}/points?wait=true");
 
         if (!$response->successful()) {
-            Log::error("Failed to upsert point to Qdrant: {$response->body()}");
+            Log::error("Failed to batch upsert points to Qdrant: {$response->body()}");
             return false;
         }
 

@@ -17,6 +17,7 @@ class RecalculateUrgencyCommand extends Command
 
         $urgencyService->calculateUrgencyScores();
         Cache::forget('dashboard_urgency_scores');
+        Cache::increment('urgency_scores_version');
 
         $this->info('Urgency scores recalculated successfully');
 

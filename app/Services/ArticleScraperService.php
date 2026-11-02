@@ -117,32 +117,74 @@ class ArticleScraperService
                 ])
                 ->get($article->url);
 
-            if (!$response->successful()) {
+            if ($response->successful()) {
+                $html = $response->body();
+                $content = $this->extractContent($html, $article->source);
+
+                if (!empty($content) && strlen($content) > 100) {
+                    $article->update([
+                        'content' => $content,
+                        'is_scraped' => true,
+                        'scraped_at' => now(),
+                        'scrape_failed' => false,
+                    ]);
+
+                    Log::info("Successfully scraped article {$article->id}: {$article->title}");
+                    return true;
+                }
+            } else {
                 Log::warning("Failed to scrape article {$article->id}: HTTP {$response->status()}");
-                $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
-                return false;
             }
 
-            $html = $response->body();
-            $content = $this->extractContent($html, $article->source);
-
-            if (empty($content)) {
-                Log::warning("No content extracted for article {$article->id}");
-                $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
-                return false;
+            // Fallback: Use existing RSS description/content if available
+            if (!empty($article->content) && strlen($article->content) >= 30) {
+                Log::info("Using fallback RSS content for article {$article->id}: {$article->title}");
+                $article->update([
+                    'is_scraped' => true,
+                    'scraped_at' => now(),
+                    'scrape_failed' => false,
+                ]);
+                return true;
             }
 
-            $article->update([
-                'content' => $content,
-                'is_scraped' => true,
-                'scraped_at' => now(),
-            ]);
+            // Secondary fallback: Use title if title is descriptive enough
+            if (!empty($article->title) && strlen($article->title) >= 20) {
+                Log::info("Using title as fallback content for article {$article->id}: {$article->title}");
+                $article->update([
+                    'content' => $article->title,
+                    'is_scraped' => true,
+                    'scraped_at' => now(),
+                    'scrape_failed' => false,
+                ]);
+                return true;
+            }
 
-            Log::info("Successfully scraped article {$article->id}: {$article->title}");
-            return true;
+            $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
+            return false;
 
         } catch (\Exception $e) {
             Log::error("Error scraping article {$article->id}: {$e->getMessage()}");
+
+            // Even if an HTTP/network exception occurred, check fallback content
+            if (!empty($article->content) && strlen($article->content) >= 30) {
+                $article->update([
+                    'is_scraped' => true,
+                    'scraped_at' => now(),
+                    'scrape_failed' => false,
+                ]);
+                return true;
+            }
+
+            if (!empty($article->title) && strlen($article->title) >= 20) {
+                $article->update([
+                    'content' => $article->title,
+                    'is_scraped' => true,
+                    'scraped_at' => now(),
+                    'scrape_failed' => false,
+                ]);
+                return true;
+            }
+
             $article->update(['scrape_failed' => true, 'scrape_attempted_at' => now()]);
             return false;
         }
