@@ -19,15 +19,17 @@ RUN npm run build
 # Stage 3: PHP-FPM image
 FROM php:8.4-fpm-alpine
 
-COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
-
 RUN apk add --no-cache \
     curl \
     bash \
+    libpng \
+    libpng-dev \
+    oniguruma-dev \
     zip \
-    unzip
-
-RUN install-php-extensions pdo_mysql gd bcmath mbstring opcache
+    unzip \
+    && docker-php-ext-install -j$(nproc) pdo_mysql gd bcmath mbstring \
+    && docker-php-ext-enable opcache \
+    && apk del --no-cache libpng-dev oniguruma-dev
 
 RUN addgroup -S app && adduser -S app -G app
 
